@@ -492,6 +492,11 @@ def onboard():
     profile = json.dumps(data.get("profile", {}))
     system_prompt = data.get("system_prompt", "")
 
+    # Auto-load full system prompt from file if available
+    full_prompt_path = Path(__file__).parent / "ruben_system_prompt.txt"
+    if full_prompt_path.exists():
+        system_prompt = full_prompt_path.read_text()
+
     db.execute(
         "INSERT INTO users (name, email, profile_json, system_prompt) VALUES (?, ?, ?, ?)",
         (name, email, profile, system_prompt)
