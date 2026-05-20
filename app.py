@@ -332,7 +332,7 @@ def chat_with_claude(user_id, user_message):
 # Garmin Integration
 # ---------------------------------------------------------------------------
 
-def pull_garmin_data(user_id, target_date=None):
+def pull_garmin_data(user_id, target_date=None, force=False):
     """Pull data from Garmin Connect and store in database."""
     try:
         from garminconnect import Garmin
@@ -347,14 +347,29 @@ def pull_garmin_data(user_id, target_date=None):
         return {"error": "Garmin credentials not configured"}
 
     target = target_date or date.today().isoformat()
+
+    # --- Rate-limit cooldown: don't retry login within 15 minutes of a 429 failure ---
+    token_dir = os.path.join(os.path.dirname(app.config["DATABASE"]), ".garmin_tokens")
+    os.makedirs(token_dir, exist_ok=True)
+    token_file = os.path.join(token_dir, "tokens.json")
+    cooldown_file = os.path.join(token_dir, "rate_limit_cooldown.txt")
+    COOLDOWN_SECONDS = 900  # 15 minutes
+
+    if not force and os.path.exists(cooldown_file):
+        try:
+            with open(cooldown_file, "r") as f:
+                last_fail = float(f.read().strip())
+            elapsed = time.time() - last_fail
+            if elapsed < COOLDOWN_SECONDS:
+                remaining = int(COOLDOWN_SECONDS - elapsed)
+                logger.info("Garmin rate-limit cooldown active — %d seconds remaining. Skipping pull.", remaining)
+                return {"error": f"Garmin rate-limited. Retry in {remaining}s. Use /api/garmin/pull with force=true to override."}
+        except Exception:
+            pass
+
     logger.info("Garmin pull starting for user=%s date=%s email=%s", user_id, target, email)
 
     try:
-        # Token storage directory
-        token_dir = os.path.join(os.path.dirname(app.config["DATABASE"]), ".garmin_tokens")
-        os.makedirs(token_dir, exist_ok=True)
-        token_file = os.path.join(token_dir, "tokens.json")
-
         garmin = Garmin(email, password)
 
         # Try to load saved session tokens first
@@ -369,13 +384,28 @@ def pull_garmin_data(user_id, target_date=None):
                 garmin.display_name = garmin.get_full_name()
                 logged_in = True
                 logger.info("Garmin token login successful (user: %s)", garmin.display_name)
+                # Clear cooldown on successful token login
+                if os.path.exists(cooldown_file):
+                    os.remove(cooldown_file)
             except Exception as e:
                 logger.warning("Garmin token login failed: %s — falling back to password login", str(e))
                 logged_in = False
 
         if not logged_in:
             logger.info("Attempting Garmin password login for %s ...", email)
-            garmin.login()
+            try:
+                garmin.login()
+            except Exception as login_err:
+                err_str = str(login_err)
+                if "429" in err_str or "too many" in err_str.lower() or "rate" in err_str.lower():
+                    # Write cooldown file so we don't retry for 15 minutes
+                    logger.error("Garmin 429 rate limit hit — activating %ds cooldown", COOLDOWN_SECONDS)
+                    try:
+                        with open(cooldown_file, "w") as f:
+                            f.write(str(time.time()))
+                    except Exception:
+                        pass
+                raise login_err
             logger.info("Garmin password login successful!")
             # Save tokens for next time
             try:
@@ -815,9 +845,38 @@ def delete_meal(meal_id):
 @app.route("/api/garmin/pull", methods=["POST"])
 @require_auth
 def garmin_pull():
-    target = request.json.get("date") if request.json else None
-    result = pull_garmin_data(g.user_id, target)
+    data = request.json or {}
+    target = data.get("date")
+    force = data.get("force", False)
+    result = pull_garmin_data(g.user_id, target, force=force)
     return jsonify(result)
+
+@app.route("/api/garmin/cooldown", methods=["GET", "DELETE"])
+def garmin_cooldown():
+    """Check or clear the Garmin rate-limit cooldown."""
+    token_dir = os.path.join(os.path.dirname(app.config["DATABASE"]), ".garmin_tokens")
+    cooldown_file = os.path.join(token_dir, "rate_limit_cooldown.txt")
+
+    if request.method == "DELETE":
+        if os.path.exists(cooldown_file):
+            os.remove(cooldown_file)
+            return jsonify({"status": "cooldown_cleared"})
+        return jsonify({"status": "no_cooldown_active"})
+
+    if os.path.exists(cooldown_file):
+        try:
+            with open(cooldown_file, "r") as f:
+                last_fail = float(f.read().strip())
+            elapsed = time.time() - last_fail
+            remaining = max(0, 900 - elapsed)
+            return jsonify({
+                "cooldown_active": remaining > 0,
+                "remaining_seconds": int(remaining),
+                "last_failure": datetime.fromtimestamp(last_fail).isoformat()
+            })
+        except Exception:
+            pass
+    return jsonify({"cooldown_active": False})
 
 @app.route("/api/garmin/test", methods=["GET"])
 def garmin_test():
