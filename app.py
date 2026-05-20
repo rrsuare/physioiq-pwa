@@ -190,6 +190,10 @@ def build_context(user_id, include_today=True):
     today = date.today().isoformat()
     context_parts = []
 
+    # Always include current date/time at the TOP so Claude knows what day it is
+    context_parts.append(f"TODAY'S DATE: {datetime.now().strftime('%A, %B %d, %Y')}")
+    context_parts.append(f"CURRENT TIME: {datetime.now().strftime('%I:%M %p')}")
+
     # Today's Garmin data
     if include_today:
         garmin = db.execute(
@@ -417,10 +421,99 @@ def generate_report(user_id, report_type="morning"):
     today = date.today().isoformat()
     context = build_context(user_id)
 
+    # Check what data is available to inform Claude
+    has_garmin = db.execute(
+        "SELECT COUNT(*) as cnt FROM garmin_data WHERE user_id = ? AND date = ?",
+        (user_id, today)
+    ).fetchone()["cnt"] > 0
+    has_meals = db.execute(
+        "SELECT COUNT(*) as cnt FROM meals WHERE user_id = ? AND date = ?",
+        (user_id, today)
+    ).fetchone()["cnt"] > 0
+
+    data_note = ""
+    if not has_garmin and not has_meals:
+        data_note = "\n\nNOTE: No Garmin data or meals have been logged for today yet. Generate the report using any available historical data, the user's profile, and general coaching guidance. For sections that require today's data, note that data is pending and provide placeholder guidance based on the user's goals and typical patterns."
+    elif not has_garmin:
+        data_note = "\n\nNOTE: No Garmin data is available for today (device may not have synced yet). Use available meal data and any historical patterns. For Garmin-dependent sections (sleep, HRV, body battery, etc.), note that data is pending."
+    elif not has_meals:
+        data_note = "\n\nNOTE: No meals have been logged for today yet. Use available Garmin data and provide nutrition guidance based on the user's targets."
+
+    html_style_instructions = """
+
+OUTPUT FORMAT: You MUST return ONLY raw HTML content (no markdown, no ```html fences, no doctype/html/head/body tags — just the inner content that goes inside a div).
+
+STYLING RULES — follow these exactly:
+- Dark theme background: #0d0d0d (page), #1c1c1e (cards), #2c2c2e (nested elements)
+- Font: -apple-system, 'Inter', 'SF Pro', sans-serif
+- Max-width: 393px; margin: 0 auto on the wrapper
+- Color palette: green=#30d158, yellow=#ffd60a, orange=#ff9f0a, blue=#0a84ff, red=#ff453a, teal=#64d2ff, purple=#bf5af2, text=#f5f5f7, muted=#a1a1a6, dim=#636366
+
+SECTION HEADER STYLE (use for every section):
+<div style="background:#1c1c1e;border-radius:14px;padding:14px 16px;margin-bottom:10px;">
+  <div style="font-size:11px;font-weight:700;color:SECTION_COLOR;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;">SECTION_TITLE</div>
+  <!-- section content here -->
+</div>
+
+DATA ROW STYLE:
+<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+  <span style="color:#a1a1a6;font-size:12px;">Label</span>
+  <span style="font-size:16px;font-weight:700;color:VALUE_COLOR;">Value</span>
+</div>
+
+BADGE STYLE:
+<span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(R,G,B,0.15);color:BADGE_COLOR;">Badge Text</span>
+
+Use these color assignments for sections: green for positive/recovery, yellow for warnings/sleep, orange for alerts/nutrition, blue for data/metrics, red for critical alerts, teal for hydration/info, purple for summary/planning.
+"""
+
     prompts = {
-        "morning": "Generate the full PhysioIQ morning report. Include all 13 sections as defined in the protocols. Output ONLY the HTML content for the report body (no doctype, html, head, or body tags — just the inner content). Use the dark theme: bg #0d0d0d, cards #1c1c1e, Inter font. Colors: green=#30d158, yellow=#ffd60a, orange=#ff9f0a, blue=#0a84ff, red=#ff453a, teal=#64d2ff, purple=#bf5af2. Max-width 393px.",
-        "post_workout": "Generate the PhysioIQ post-workout report. Analyze today's workout data, recovery metrics, and provide nutrition recommendations for the rest of the day. Output ONLY the HTML content (inner content, no doctype/html/head/body). Dark theme same as morning report.",
-        "eod": "Generate the PhysioIQ end-of-day report. Summarize today's complete data: meals, macros, workout, recovery, weight trend, and provide tomorrow's recommendations. Output ONLY the HTML content (inner content, no doctype/html/head/body). Dark theme same as morning report."
+        "morning": f"""Generate the full PhysioIQ Morning Report for today. Include ALL 13 sections with colored headers:
+
+1. HEADER — Report title with date, user name, and a readiness badge (PUSH/MODERATE/DIAL BACK/REST) using appropriate badge color
+2. READINESS SCORE — Overall readiness assessment with score and color coding
+3. SLEEP ANALYSIS — Sleep score, quality assessment, time metrics (use yellow header)
+4. HRV STATUS — Current HRV, 7-day trend, recovery signal (use green header)
+5. BODY BATTERY — Current charge, projected drain, recommendations (use teal header)
+6. WEIGHT TREND — Current weight, trend direction, context (use blue header)
+7. RESTING HEART RATE — Current RHR, trend, what it signals (use purple header)
+8. STRESS LOAD — Average stress, breakdown, management tips (use orange header)
+9. ACTIVITY TARGET — Steps, active minutes, today's movement goals (use green header)
+10. NUTRITION PLAN — Today's macro targets, meal timing strategy (use orange header)
+11. TRAINING RECOMMENDATION — What to do today based on readiness (use blue header)
+12. HYDRATION PROTOCOL — Water intake targets, timing (use teal header)
+13. COACH'S NOTE — Personal insight, motivation, key focus for the day (use purple header)
+
+{html_style_instructions}{data_note}""",
+
+        "post_workout": f"""Generate the PhysioIQ Post-Workout Report. Include these sections with colored headers:
+
+1. HEADER — Post-workout report title with timestamp
+2. WORKOUT SUMMARY — What was done, duration, intensity (use green header)
+3. RECOVERY STATUS — Body battery drain, HR recovery, stress response (use teal header)
+4. CALORIC IMPACT — Calories burned estimate, net balance (use orange header)
+5. RECOVERY NUTRITION — What to eat NOW for recovery, macro targets (use blue header)
+6. REMAINING DAILY TARGETS — Updated macro/calorie targets for rest of day (use yellow header)
+7. HYDRATION RECOVERY — Fluid replacement needs (use teal header)
+8. NEXT SESSION PREVIEW — When to train next, what to focus on (use purple header)
+9. COACH'S NOTE — Performance observations, adjustments (use green header)
+
+{html_style_instructions}{data_note}""",
+
+        "eod": f"""Generate the PhysioIQ End-of-Day Report. Include these sections with colored headers:
+
+1. HEADER — EOD report title with date and overall grade
+2. DAILY SCORECARD — Overall grade for the day across all metrics (use blue header)
+3. NUTRITION RECAP — Total macros vs targets, meal quality assessment (use orange header)
+4. ACTIVITY SUMMARY — Steps, active minutes, calories burned (use green header)
+5. RECOVERY METRICS — Sleep readiness prediction, HRV trend, body battery (use teal header)
+6. WEIGHT TRACKING — Today's weight in context of weekly/monthly trend (use blue header)
+7. WINS — What went well today, celebrate progress (use green header)
+8. AREAS TO IMPROVE — Honest assessment of gaps (use yellow header)
+9. TOMORROW'S GAME PLAN — Training, nutrition, and recovery priorities (use purple header)
+10. COACH'S CLOSING NOTE — End-of-day insight and motivation (use purple header)
+
+{html_style_instructions}{data_note}"""
     }
 
     system = user["system_prompt"] or "You are PhysioIQ, a personal body performance coach."
@@ -434,6 +527,16 @@ def generate_report(user_id, report_type="morning"):
             messages=[{"role": "user", "content": prompts.get(report_type, prompts["morning"])}]
         )
         html = response.content[0].text
+
+        # Strip markdown code fences if Claude wrapped the HTML in them
+        html = html.strip()
+        if html.startswith("```html"):
+            html = html[7:]
+        elif html.startswith("```"):
+            html = html[3:]
+        if html.endswith("```"):
+            html = html[:-3]
+        html = html.strip()
 
         # Store report
         db.execute("""
