@@ -1,5 +1,5 @@
 """
-PhysioIQ PWA — Backend Server
+PhysioIQ PWA â Backend Server
 A lightweight Flask app that serves as the backend for PhysioIQ.
 Handles: Garmin data pulls, meal logging, report generation, and chat via Claude API.
 """
@@ -210,7 +210,7 @@ def build_context(user_id, include_today=True):
             context_parts.append(f"TODAY'S GARMIN DATA ({today}):")
             context_parts.append(f"  Weight: {garmin['weight_lb']} lb")
             context_parts.append(f"  Sleep Score: {garmin['sleep_score']}")
-            context_parts.append(f"  HRV: {garmin['hrv']}")
+            context_parts.append(f"  HRV: {'armin['hrv']}")
             context_parts.append(f"  Resting HR: {garmin['resting_hr']}")
             context_parts.append(f"  Body Battery: {garmin['body_battery']}")
             context_parts.append(f"  Steps: {garmin['steps']}")
@@ -362,7 +362,7 @@ def pull_garmin_data(user_id, target_date=None, force=False):
             elapsed = time.time() - last_fail
             if elapsed < COOLDOWN_SECONDS:
                 remaining = int(COOLDOWN_SECONDS - elapsed)
-                logger.info("Garmin rate-limit cooldown active — %d seconds remaining. Skipping pull.", remaining)
+                logger.info("Garmin rate-limit cooldown active â %d seconds remaining. Skipping pull.", remaining)
                 return {"error": f"Garmin rate-limited. Retry in {remaining}s. Use /api/garmin/pull with force=true to override."}
         except Exception:
             pass
@@ -388,10 +388,31 @@ def pull_garmin_data(user_id, target_date=None, force=False):
                 if os.path.exists(cooldown_file):
                     os.remove(cooldown_file)
             except Exception as e:
-                logger.warning("Garmin token login failed: %s — falling back to password login", str(e))
+                logger.warning("Garmin token login failed: %s â falling back to password login", str(e))
                 logged_in = False
 
         if not logged_in:
+            # Patch garth's session with proper 429 retry handling
+            # This makes it wait with exponential backoff instead of hammering the endpoint
+            try:
+                from urllib3.util.retry import Retry
+                from requests.adapters import HTTPAdapter
+                retry_strategy = Retry(
+                    total=3,
+                    backoff_factor=10,  # 10s, 20s, 40s between retries
+                    status_forcelist=[429, 500, 502, 503, 504],
+                    respect_retry_after_header=True,
+                    allowed_methods=["GET", "POST"],
+                )
+                adapter = HTTPAdapter(max_retries=retry_strategy)
+                # Patch garth's internal client session
+                if hasattr(garmin, 'garth') and hasattr(garmin.garth, 'sess'):
+                    garmin.garth.sess.mount("https://", adapter)
+                    garmin.garth.sess.mount("http://", adapter)
+                    logger.info("Patched garth session with 429-aware retry (backoff=10s)")
+            except Exception as patch_err:
+                logger.warning("Could not patch garth retry config: %s", str(patch_err))
+
             logger.info("Attempting Garmin password login for %s ...", email)
             try:
                 garmin.login()
@@ -399,7 +420,7 @@ def pull_garmin_data(user_id, target_date=None, force=False):
                 err_str = str(login_err)
                 if "429" in err_str or "too many" in err_str.lower() or "rate" in err_str.lower():
                     # Write cooldown file so we don't retry for 15 minutes
-                    logger.error("Garmin 429 rate limit hit — activating %ds cooldown", COOLDOWN_SECONDS)
+                    logger.error("Garmin 429 rate limit hit â activating %ds cooldown", COOLDOWN_SECONDS)
                     try:
                         with open(cooldown_file, "w") as f:
                             f.write(str(time.time()))
@@ -467,7 +488,7 @@ def pull_garmin_data(user_id, target_date=None, force=False):
         active_min = stats.get("activeSeconds", 0) // 60 if stats and stats.get("activeSeconds") else None
         cal_total = stats.get("totalKilocalories") if stats else None
 
-        logger.info("Garmin metrics — RHR:%s BB:%s stress:%s steps:%s cal:%s",
+        logger.info("Garmin metrics â RHR:%s BB:%s stress:%s steps:%s cal:%s",
                      resting_hr, body_battery, stress_avg, steps, cal_total)
 
         # Store in database
@@ -545,9 +566,9 @@ def generate_report(user_id, report_type="morning"):
 
     html_style_instructions = """
 
-OUTPUT FORMAT: You MUST return ONLY raw HTML content (no markdown, no ```html fences, no doctype/html/head/body tags — just the inner content that goes inside a div).
+OUTPUT FORMAT: You MUST return ONLY raw HTML content (no markdown, no ```html fences, no doctype/html/head/body tags â just the inner content that goes inside a div).
 
-STYLING RULES — follow these exactly:
+STYLING RULES â follow these exactly:
 - Dark theme background: #0d0d0d (page), #1c1c1e (cards), #2c2c2e (nested elements)
 - Font: -apple-system, 'Inter', 'SF Pro', sans-serif
 - Max-width: 393px; margin: 0 auto on the wrapper
@@ -574,48 +595,48 @@ Use these color assignments for sections: green for positive/recovery, yellow fo
     prompts = {
         "morning": f"""Generate the full PhysioIQ Morning Report for today. Include ALL 13 sections with colored headers:
 
-1. HEADER — Report title with date, user name, and a readiness badge (PUSH/MODERATE/DIAL BACK/REST) using appropriate badge color
-2. READINESS SCORE — Overall readiness assessment with score and color coding
-3. SLEEP ANALYSIS — Sleep score, quality assessment, time metrics (use yellow header)
-4. HRV STATUS — Current HRV, 7-day trend, recovery signal (use green header)
-5. BODY BATTERY — Current charge, projected drain, recommendations (use teal header)
-6. WEIGHT TREND — Current weight, trend direction, context (use blue header)
-7. RESTING HEART RATE — Current RHR, trend, what it signals (use purple header)
-8. STRESS LOAD — Average stress, breakdown, management tips (use orange header)
-9. ACTIVITY TARGET — Steps, active minutes, today's movement goals (use green header)
-10. NUTRITION PLAN — Today's macro targets, meal timing strategy (use orange header)
-11. TRAINING RECOMMENDATION — What to do today based on readiness (use blue header)
-12. HYDRATION PROTOCOL — Water intake targets, timing (use teal header)
-13. COACH'S NOTE — Personal insight, motivation, key focus for the day (use purple header)
+1. HEADER â Report title with date, user name, and a readiness badge (PUSH/MODERATE/DIAL BACK/REST) using appropriate badge color
+2. READINESS SCORE â Overall readiness assessment with score and color coding
+3. SLEEP ANALYSIS â Sleep score, quality assessment, time metrics (use yellow header)
+4. HRV STATUS â Current HRV, 7-day trend, recovery signal (use green header)
+5. BODY BATTERY â Current charge, projected drain, recommendations (use teal header)
+6. WEIGHT TREND â Current weight, trend direction, context (use blue header)
+7. RESTING HEART RATE â Current RHR, trend, what it signals (use purple header)
+8. STRESS LOAD â Average stress, breakdown, management tips (use orange header)
+9. ACTIVITY TARGET â Steps, active minutes, today's movement goals (use green header)
+10. NUTRITION PLAN â Today's macro targets, meal timing strategy (use orange header)
+11. TRAINING RECOMMENDATION â What to do today based on readiness (use blue header)
+12. HYDRATION PROTOCOL â Water intake targets, timing (use teal header)
+13. COACH'S NOTE â Personal insight, motivation, key focus for the day (use purple header)
 
 {html_style_instructions}{data_note}""",
 
         "post_workout": f"""Generate the PhysioIQ Post-Workout Report. Include these sections with colored headers:
 
-1. HEADER — Post-workout report title with timestamp
-2. WORKOUT SUMMARY — What was done, duration, intensity (use green header)
-3. RECOVERY STATUS — Body battery drain, HR recovery, stress response (use teal header)
-4. CALORIC IMPACT — Calories burned estimate, net balance (use orange header)
-5. RECOVERY NUTRITION — What to eat NOW for recovery, macro targets (use blue header)
-6. REMAINING DAILY TARGETS — Updated macro/calorie targets for rest of day (use yellow header)
-7. HYDRATION RECOVERY — Fluid replacement needs (use teal header)
-8. NEXT SESSION PREVIEW — When to train next, what to focus on (use purple header)
-9. COACH'S NOTE — Performance observations, adjustments (use green header)
+1. HEADER â Post-workout report title with timestamp
+2. WORKOUT SUMMARY â What was done, duration, intensity (use green header)
+3. RECOVERY STATUS â Body battery drain, HR recovery, stress response (use teal header)
+4. CALORIC IMPACT â Calories burned estimate, net balance (use orange header)
+5. RECOVERY NUTRITION â What to eat NOW for recovery, macro targets (use blue header)
+6. REMAINING DAILY TARGETS â Updated macro/calorie targets for rest of day (use yellow header)
+7. HYDRATION RECOVERY â Fluid replacement needs (use teal header)
+8. NEXT SESSION PREVIEW â When to train next, what to focus on (use purple header)
+9. COACH'S NOTE â Performance observations, adjustments (use green header)
 
 {html_style_instructions}{data_note}""",
 
         "eod": f"""Generate the PhysioIQ End-of-Day Report. Include these sections with colored headers:
 
-1. HEADER — EOD report title with date and overall grade
-2. DAILY SCORECARD — Overall grade for the day across all metrics (use blue header)
-3. NUTRITION RECAP — Total macros vs targets, meal quality assessment (use orange header)
-4. ACTIVITY SUMMARY — Steps, active minutes, calories burned (use green header)
-5. RECOVERY METRICS — Sleep readiness prediction, HRV trend, body battery (use teal header)
-6. WEIGHT TRACKING — Today's weight in context of weekly/monthly trend (use blue header)
-7. WINS — What went well today, celebrate progress (use green header)
-8. AREAS TO IMPROVE — Honest assessment of gaps (use yellow header)
-9. TOMORROW'S GAME PLAN — Training, nutrition, and recovery priorities (use purple header)
-10. COACH'S CLOSING NOTE — End-of-day insight and motivation (use purple header)
+1. HEADER â EOD report title with date and overall grade
+2. DAILY SCORECARD â Overall grade for the day across all metrics (use blue header)
+3. NUTRITION RECAP â Total macros vs targets, meal quality assessment (use orange header)
+4. ACTIVITY SUMMARY â Steps, active minutes, calories burned (use green header)
+5. RECOVERY METRICS â Sleep readiness prediction, HRV trend, body battery (use teal header)
+6. WEIGHT TRACKING â Today's weight in context of weekly/monthly trend (use blue header)
+7. WINS â What went well today, celebrate progress (use green header)
+8. AREAS TO IMPROVE â Honest assessment of gaps (use yellow header)
+9. TOMORROW'S GAME PLAN â Training, nutrition, and recovery priorities (use purple header)
+10. COACH'S CLOSING NOTE â End-of-day insight and motivation (use purple header)
 
 {html_style_instructions}{data_note}"""
     }
@@ -675,7 +696,7 @@ def service_worker():
 
 @app.route("/api/login", methods=["POST"])
 def login():
-    """Simple login — for single-user setup, just returns token for user 1."""
+    """Simple login â for single-user setup, just returns token for user 1."""
     db = get_db()
     user = db.execute("SELECT id FROM users LIMIT 1").fetchone()
     if not user:
@@ -880,7 +901,7 @@ def garmin_cooldown():
 
 @app.route("/api/garmin/test", methods=["GET"])
 def garmin_test():
-    """Debug endpoint — test Garmin connection without auth. Returns status info."""
+    """Debug endpoint â test Garmin connection without auth. Returns status info."""
     email = app.config["GARMIN_EMAIL"]
     password = app.config["GARMIN_PASSWORD"]
     info = {
@@ -906,6 +927,23 @@ def garmin_test():
 
     try:
         garmin = Garmin(email, password)
+        # Patch garth's session with 429-aware retry
+        try:
+            from urllib3.util.retry import Retry
+            from requests.adapters import HTTPAdapter
+            retry_strategy = Retry(
+                total=3,
+                backoff_factor=10,
+                status_forcelist=[429, 500, 502, 503, 504],
+                respect_retry_after_header=True,
+                allowed_methods=["GET", "POST"],
+            )
+            adapter = HTTPAdapter(max_retries=retry_strategy)
+            if hasattr(garmin, 'garth') and hasattr(garmin.garth, 'sess'):
+                garmin.garth.sess.mount("https://", adapter)
+                garmin.garth.sess.mount("http://", adapter)
+        except Exception:
+            pass
         logger.info("[TEST] Attempting Garmin login for %s", email)
         garmin.login()
         info["login"] = "SUCCESS"
@@ -1022,7 +1060,7 @@ def export_garmin():
     end = request.args.get("end", date.today().isoformat())
     db = get_db()
     data = db.execute(
-        "SELECT * FROM garmin_data WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date",
+        "SELECT * FROM garmin_data WHERe user_id = ? AND date >= ? AND date <= ? ORDER BY date",
         (g.user_id, start, end)
     ).fetchall()
     return jsonify([dict(d) for d in data])
