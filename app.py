@@ -770,6 +770,33 @@ def recommend_meal():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# --- System Prompt Update ---
+
+@app.route("/api/system-prompt", methods=["PUT"])
+@require_auth
+def update_system_prompt():
+    """Update the system prompt for the current user."""
+    data = request.get_json()
+    if not data or "system_prompt" not in data:
+        return jsonify({"error": "system_prompt field required"}), 400
+    db = get_db()
+    db.execute("UPDATE users SET system_prompt = ? WHERE id = ?", (data["system_prompt"], g.user_id))
+    db.commit()
+    return jsonify({"status": "ok", "length": len(data["system_prompt"])})
+
+@app.route("/api/load-full-prompt", methods=["POST"])
+@require_auth
+def load_full_prompt():
+    """Load the full system prompt from system_prompt_template.md (filled for Ruben)."""
+    prompt_path = Path(__file__).parent / "ruben_system_prompt.txt"
+    if not prompt_path.exists():
+        return jsonify({"error": "ruben_system_prompt.txt not found"}), 404
+    prompt_text = prompt_path.read_text()
+    db = get_db()
+    db.execute("UPDATE users SET system_prompt = ? WHERE id = ?", (prompt_text, g.user_id))
+    db.commit()
+    return jsonify({"status": "ok", "length": len(prompt_text), "preview": prompt_text[:200]})
+
 # ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
