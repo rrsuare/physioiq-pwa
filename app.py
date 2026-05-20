@@ -10,9 +10,15 @@ import sqlite3
 import hashlib
 import hmac
 import time
+import logging
+import traceback
 from datetime import datetime, date, timedelta
 from functools import wraps
 from pathlib import Path
+
+# Set up logging so errors show in Render logs
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+logger = logging.getLogger("physioiq")
 
 # Load .env file if present
 env_path = Path(__file__).parent / ".env"
@@ -278,9 +284,11 @@ def chat_with_claude(user_id, user_message):
     ).fetchone()["cnt"] > 0
     if not has_garmin_today and app.config["GARMIN_EMAIL"] and app.config["GARMIN_PASSWORD"]:
         try:
-            pull_garmin_data(user_id, today)
-        except Exception:
-            pass
+            result = pull_garmin_data(user_id, today)
+            if result and result.get("error"):
+                logger.warning("Garmin auto-pull in chat failed: %s", result["error"])
+        except Exception as e:
+            logger.error("Garmin auto-pull in chat exception: %s", str(e))
 
     # Build system prompt
     system_prompt = user["system_prompt"] or "You are PhysioIQ, a personal body performance coach and nutrition trainer."
@@ -329,14 +337,17 @@ def pull_garmin_data(user_id, target_date=None):
     try:
         from garminconnect import Garmin
     except ImportError:
+        logger.error("garminconnect not installed")
         return {"error": "garminconnect not installed. Run: pip install garminconnect"}
 
     email = app.config["GARMIN_EMAIL"]
     password = app.config["GARMIN_PASSWORD"]
     if not email or not password:
+        logger.error("Garmin credentials not configured (email=%s, password=%s)", bool(email), bool(password))
         return {"error": "Garmin credentials not configured"}
 
     target = target_date or date.today().isoformat()
+    logger.info("Garmin pull starting for user=%s date=%s email=%s", user_id, target, email)
 
     try:
         # Token storage directory
@@ -346,25 +357,52 @@ def pull_garmin_data(user_id, target_date=None):
 
         garmin = Garmin(email, password)
 
-        # Try to load saved tokens
+        # Try to load saved session tokens first
+        logged_in = False
         if os.path.exists(token_file):
             try:
                 with open(token_file, "r") as f:
-                    tokens = json.load(f)
-                garmin.login(tokens)
-            except Exception:
-                garmin.login()
-                with open(token_file, "w") as f:
-                    json.dump(garmin.garth.dumps(), f)
-        else:
+                    token_data = f.read()
+                logger.info("Found saved Garmin tokens, attempting token login...")
+                garmin.garth.loads(token_data)
+                # Validate the token by making a lightweight call
+                garmin.display_name = garmin.get_full_name()
+                logged_in = True
+                logger.info("Garmin token login successful (user: %s)", garmin.display_name)
+            except Exception as e:
+                logger.warning("Garmin token login failed: %s — falling back to password login", str(e))
+                logged_in = False
+
+        if not logged_in:
+            logger.info("Attempting Garmin password login for %s ...", email)
             garmin.login()
-            with open(token_file, "w") as f:
-                json.dump(garmin.garth.dumps(), f)
+            logger.info("Garmin password login successful!")
+            # Save tokens for next time
+            try:
+                with open(token_file, "w") as f:
+                    f.write(garmin.garth.dumps())
+                logger.info("Garmin tokens saved to %s", token_file)
+            except Exception as e:
+                logger.warning("Could not save Garmin tokens: %s", str(e))
 
         # Fetch data
+        logger.info("Fetching Garmin stats for %s ...", target)
         stats = garmin.get_stats(target)
-        sleep = garmin.get_sleep_data(target)
-        hrv_data = garmin.get_hrv_data(target)
+        logger.info("Garmin stats keys: %s", list(stats.keys()) if stats else "None")
+
+        sleep = None
+        try:
+            sleep = garmin.get_sleep_data(target)
+            logger.info("Garmin sleep data received: %s", bool(sleep))
+        except Exception as e:
+            logger.warning("Garmin sleep data fetch failed: %s", str(e))
+
+        hrv_data = None
+        try:
+            hrv_data = garmin.get_hrv_data(target)
+            logger.info("Garmin HRV data received: %s", bool(hrv_data))
+        except Exception as e:
+            logger.warning("Garmin HRV data fetch failed: %s", str(e))
 
         # Extract key metrics
         weight_lb = None
@@ -372,23 +410,35 @@ def pull_garmin_data(user_id, target_date=None):
             weight_data = garmin.get_body_composition(target)
             if weight_data and weight_data.get("weight"):
                 weight_lb = round(weight_data["weight"] / 1000 * 2.20462, 1)
-        except Exception:
-            pass
+                logger.info("Garmin weight: %s lb", weight_lb)
+        except Exception as e:
+            logger.warning("Garmin weight fetch failed: %s", str(e))
 
         sleep_score = None
-        if sleep and sleep.get("dailySleepDTO", {}).get("sleepScores", {}).get("overall", {}).get("value"):
-            sleep_score = sleep["dailySleepDTO"]["sleepScores"]["overall"]["value"]
+        if sleep:
+            try:
+                sleep_score = sleep.get("dailySleepDTO", {}).get("sleepScores", {}).get("overall", {}).get("value")
+                logger.info("Sleep score: %s", sleep_score)
+            except Exception:
+                pass
 
         hrv = None
-        if hrv_data and hrv_data.get("hrvSummary", {}).get("lastNightAvg"):
-            hrv = hrv_data["hrvSummary"]["lastNightAvg"]
+        if hrv_data:
+            try:
+                hrv = hrv_data.get("hrvSummary", {}).get("lastNightAvg")
+                logger.info("HRV: %s", hrv)
+            except Exception:
+                pass
 
-        resting_hr = stats.get("restingHeartRate")
-        body_battery = stats.get("bodyBatteryChargedValue")
-        stress_avg = stats.get("averageStressLevel")
-        steps = stats.get("totalSteps")
-        active_min = stats.get("activeSeconds", 0) // 60 if stats.get("activeSeconds") else None
-        cal_total = stats.get("totalKilocalories")
+        resting_hr = stats.get("restingHeartRate") if stats else None
+        body_battery = stats.get("bodyBatteryChargedValue") if stats else None
+        stress_avg = stats.get("averageStressLevel") if stats else None
+        steps = stats.get("totalSteps") if stats else None
+        active_min = stats.get("activeSeconds", 0) // 60 if stats and stats.get("activeSeconds") else None
+        cal_total = stats.get("totalKilocalories") if stats else None
+
+        logger.info("Garmin metrics — RHR:%s BB:%s stress:%s steps:%s cal:%s",
+                     resting_hr, body_battery, stress_avg, steps, cal_total)
 
         # Store in database
         db = get_db()
@@ -402,6 +452,7 @@ def pull_garmin_data(user_id, target_date=None):
               json.dumps({"stats": stats, "sleep_score": sleep_score, "hrv_raw": hrv_data})))
         db.commit()
 
+        logger.info("Garmin data stored successfully for %s", target)
         return {
             "success": True,
             "date": target,
@@ -413,6 +464,7 @@ def pull_garmin_data(user_id, target_date=None):
         }
 
     except Exception as e:
+        logger.error("Garmin pull FAILED: %s\n%s", str(e), traceback.format_exc())
         return {"error": f"Garmin pull failed: {str(e)}"}
 
 # ---------------------------------------------------------------------------
@@ -435,9 +487,11 @@ def generate_report(user_id, report_type="morning"):
     # Auto-pull Garmin data before generating the report
     if app.config["GARMIN_EMAIL"] and app.config["GARMIN_PASSWORD"]:
         try:
-            pull_garmin_data(user_id, today)
-        except Exception:
-            pass  # Continue with whatever data we have
+            result = pull_garmin_data(user_id, today)
+            if result and result.get("error"):
+                logger.warning("Garmin auto-pull in report failed: %s", result["error"])
+        except Exception as e:
+            logger.error("Garmin auto-pull in report exception: %s", str(e))
 
     context = build_context(user_id)
 
@@ -764,6 +818,57 @@ def garmin_pull():
     target = request.json.get("date") if request.json else None
     result = pull_garmin_data(g.user_id, target)
     return jsonify(result)
+
+@app.route("/api/garmin/test", methods=["GET"])
+def garmin_test():
+    """Debug endpoint — test Garmin connection without auth. Returns status info."""
+    email = app.config["GARMIN_EMAIL"]
+    password = app.config["GARMIN_PASSWORD"]
+    info = {
+        "email_configured": bool(email),
+        "email_value": email[:3] + "***" if email else None,
+        "password_configured": bool(password),
+        "password_length": len(password) if password else 0,
+        "timestamp": datetime.now().isoformat()
+    }
+    if not email or not password:
+        info["status"] = "MISSING_CREDENTIALS"
+        return jsonify(info)
+
+    try:
+        from garminconnect import Garmin
+        info["garminconnect_installed"] = True
+        import garminconnect as gc_module
+        info["garminconnect_version"] = getattr(gc_module, "__version__", "unknown")
+    except ImportError:
+        info["garminconnect_installed"] = False
+        info["status"] = "LIBRARY_NOT_INSTALLED"
+        return jsonify(info)
+
+    try:
+        garmin = Garmin(email, password)
+        logger.info("[TEST] Attempting Garmin login for %s", email)
+        garmin.login()
+        info["login"] = "SUCCESS"
+        info["display_name"] = garmin.get_full_name()
+
+        # Try pulling today's stats
+        today = date.today().isoformat()
+        stats = garmin.get_stats(today)
+        info["stats_keys"] = list(stats.keys()) if stats else []
+        info["resting_hr"] = stats.get("restingHeartRate") if stats else None
+        info["steps"] = stats.get("totalSteps") if stats else None
+        info["body_battery"] = stats.get("bodyBatteryChargedValue") if stats else None
+        info["status"] = "OK"
+    except Exception as e:
+        info["login"] = "FAILED"
+        info["error"] = str(e)
+        info["error_type"] = type(e).__name__
+        info["traceback"] = traceback.format_exc()
+        info["status"] = "LOGIN_FAILED"
+        logger.error("[TEST] Garmin login failed: %s\n%s", str(e), traceback.format_exc())
+
+    return jsonify(info)
 
 @app.route("/api/garmin/data", methods=["GET"])
 @require_auth
