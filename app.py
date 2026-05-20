@@ -270,6 +270,18 @@ def chat_with_claude(user_id, user_message):
     if not user:
         return {"error": "User not found"}
 
+    # Auto-pull Garmin data if not already pulled today
+    today = date.today().isoformat()
+    has_garmin_today = db.execute(
+        "SELECT COUNT(*) as cnt FROM garmin_data WHERE user_id = ? AND date = ?",
+        (user_id, today)
+    ).fetchone()["cnt"] > 0
+    if not has_garmin_today and app.config["GARMIN_EMAIL"] and app.config["GARMIN_PASSWORD"]:
+        try:
+            pull_garmin_data(user_id, today)
+        except Exception:
+            pass
+
     # Build system prompt
     system_prompt = user["system_prompt"] or "You are PhysioIQ, a personal body performance coach and nutrition trainer."
     context = build_context(user_id)
@@ -419,6 +431,14 @@ def generate_report(user_id, report_type="morning"):
         return {"error": "User not found"}
 
     today = date.today().isoformat()
+
+    # Auto-pull Garmin data before generating the report
+    if app.config["GARMIN_EMAIL"] and app.config["GARMIN_PASSWORD"]:
+        try:
+            pull_garmin_data(user_id, today)
+        except Exception:
+            pass  # Continue with whatever data we have
+
     context = build_context(user_id)
 
     # Check what data is available to inform Claude
