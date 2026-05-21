@@ -9,253 +9,253 @@
 <link rel="manifest" href="/manifest.json">
 <title>PhysioIQ</title>
 <style>
-  :root {
-    --bg: #0d0d0d; --card: #1c1c1e; --card-hover: #2c2c2e;
-    --text: #f5f5f7; --text2: #a1a1a6; --text3: #636366;
-    --green: #30d158; --yellow: #ffd60a; --orange: #ff9f0a;
-    --blue: #0a84ff; --red: #ff453a; --teal: #64d2ff; --purple: #bf5af2;
-    --border: #38383a; --tab-h: 56px;
-    --safe-b: env(safe-area-inset-bottom, 0px);
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-  body { font-family: -apple-system, 'Inter', 'SF Pro', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; overflow: hidden; height: 100dvh; }
+:root {
+--bg: #0d0d0d; --card: #1c1c1e; --card-hover: #2c2c2e;
+--text: #f5f5f7; --text2: #a1a1a6; --text3: #636366;
+--green: #30d158; --yellow: #ffd60a; --orange: #ff9f0a;
+--blue: #0a84ff; --red: #ff453a; --teal: #64d2ff; --purple: #bf5af2;
+--border: #38383a; --tab-h: 56px;
+--safe-b: env(safe-area-inset-bottom, 0px);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body { font-family: -apple-system, 'Inter', 'SF Pro', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; overflow: hidden; height: 100dvh; }
 
-  /* --- Layout --- */
-  #app { display: flex; flex-direction: column; height: 100dvh; max-width: 430px; margin: 0 auto; }
-  #header { padding: 12px 16px 8px; background: var(--bg); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-  #header h1 { font-size: 20px; font-weight: 800; letter-spacing: 1px; }
-  #header h1 span { color: var(--blue); }
-  #header .sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
-  .panels { flex: 1; overflow: hidden; position: relative; }
-  .panel { position: absolute; inset: 0; overflow-y: auto; padding: 12px 16px 20px; display: none; -webkit-overflow-scrolling: touch; }
-  .panel.active { display: block; }
-  #tab-bar { display: flex; background: var(--card); border-top: 1px solid var(--border); flex-shrink: 0; padding-bottom: var(--safe-b); }
-  .tab { flex: 1; text-align: center; padding: 8px 0 6px; color: var(--text3); font-size: 10px; font-weight: 600; cursor: pointer; transition: color .15s; }
-  .tab.active { color: var(--blue); }
-  .tab .icon { font-size: 20px; display: block; margin-bottom: 2px; }
+/* --- Layout --- */
+#app { display: flex; flex-direction: column; height: 100dvh; max-width: 430px; margin: 0 auto; }
+#header { padding: 12px 16px 8px; background: var(--bg); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+#header h1 { font-size: 20px; font-weight: 800; letter-spacing: 1px; }
+#header h1 span { color: var(--blue); }
+#header .sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.panels { flex: 1; overflow: hidden; position: relative; }
+.panel { position: absolute; inset: 0; overflow-y: auto; padding: 12px 16px 20px; display: none; -webkit-overflow-scrolling: touch; }
+.panel.active { display: block; }
+#tab-bar { display: flex; background: var(--card); border-top: 1px solid var(--border); flex-shrink: 0; padding-bottom: var(--safe-b); }
+.tab { flex: 1; text-align: center; padding: 8px 0 6px; color: var(--text3); font-size: 10px; font-weight: 600; cursor: pointer; transition: color .15s; }
+.tab.active { color: var(--blue); }
+.tab .icon { font-size: 20px; display: block; margin-bottom: 2px; }
 
-  /* --- Cards --- */
-  .card { background: var(--card); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
-  .card-title { font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; }
-  .metric { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
-  .metric .label { color: var(--text2); font-size: 12px; }
-  .metric .value { font-size: 16px; font-weight: 700; }
-  .metric .value.green { color: var(--green); }
-  .metric .value.yellow { color: var(--yellow); }
-  .metric .value.orange { color: var(--orange); }
-  .metric .value.red { color: var(--red); }
-  .metric .value.blue { color: var(--blue); }
-  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
-  .badge-green { background: rgba(48,209,88,.15); color: var(--green); }
-  .badge-yellow { background: rgba(255,214,10,.15); color: var(--yellow); }
-  .badge-orange { background: rgba(255,159,10,.15); color: var(--orange); }
-  .badge-red { background: rgba(255,69,58,.15); color: var(--red); }
+/* --- Cards --- */
+.card { background: var(--card); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
+.card-title { font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; }
+.metric { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+.metric .label { color: var(--text2); font-size: 12px; }
+.metric .value { font-size: 16px; font-weight: 700; }
+.metric .value.green { color: var(--green); }
+.metric .value.yellow { color: var(--yellow); }
+.metric .value.orange { color: var(--orange); }
+.metric .value.red { color: var(--red); }
+.metric .value.blue { color: var(--blue); }
+.badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.badge-green { background: rgba(48,209,88,.15); color: var(--green); }
+.badge-yellow { background: rgba(255,214,10,.15); color: var(--yellow); }
+.badge-orange { background: rgba(255,159,10,.15); color: var(--orange); }
+.badge-red { background: rgba(255,69,58,.15); color: var(--red); }
 
-  /* --- Chat --- */
-  #chat-messages { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
-  .msg { max-width: 85%; padding: 10px 14px; border-radius: 18px; font-size: 14px; line-height: 1.45; word-wrap: break-word; }
-  .msg.user { background: var(--blue); color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
-  .msg.assistant { background: var(--card); color: var(--text); align-self: flex-start; border-bottom-left-radius: 4px; }
-  .msg.assistant p { margin-bottom: 8px; }
-  .msg.assistant p:last-child { margin-bottom: 0; }
-  .msg.assistant strong { color: var(--blue); }
-  .msg.assistant code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
-  .msg.typing { color: var(--text3); font-style: italic; }
-  #chat-input-area { display: flex; gap: 8px; padding: 10px 16px; background: var(--bg); border-top: 1px solid var(--border); flex-shrink: 0; padding-bottom: max(10px, var(--safe-b)); }
-  #chat-input { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 22px; padding: 10px 16px; color: var(--text); font-size: 14px; outline: none; font-family: inherit; resize: none; max-height: 100px; line-height: 1.4; }
-  #chat-input::placeholder { color: var(--text3); }
-  #chat-input:focus { border-color: var(--blue); }
-  #chat-send { background: var(--blue); border: none; border-radius: 50%; width: 38px; height: 38px; color: #fff; font-size: 18px; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
-  #chat-send:disabled { opacity: .4; }
+/* --- Chat --- */
+#chat-messages { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.msg { max-width: 85%; padding: 10px 14px; border-radius: 18px; font-size: 14px; line-height: 1.45; word-wrap: break-word; }
+.msg.user { background: var(--blue); color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
+.msg.assistant { background: var(--card); color: var(--text); align-self: flex-start; border-bottom-left-radius: 4px; }
+.msg.assistant p { margin-bottom: 8px; }
+.msg.assistant p:last-child { margin-bottom: 0; }
+.msg.assistant strong { color: var(--blue); }
+.msg.assistant code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.msg.typing { color: var(--text3); font-style: italic; }
+#chat-input-area { display: flex; gap: 8px; padding: 10px 16px; background: var(--bg); border-top: 1px solid var(--border); flex-shrink: 0; padding-bottom: max(10px, var(--safe-b)); }
+#chat-input { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 22px; padding: 10px 16px; color: var(--text); font-size: 14px; outline: none; font-family: inherit; resize: none; max-height: 100px; line-height: 1.4; }
+#chat-input::placeholder { color: var(--text3); }
+#chat-input:focus { border-color: var(--blue); }
+#chat-send { background: var(--blue); border: none; border-radius: 50%; width: 38px; height: 38px; color: #fff; font-size: 18px; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+#chat-send:disabled { opacity: .4; }
 
-  /* --- Meals --- */
-  .meal-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
-  .meal-item:last-child { border: none; }
-  .meal-info h4 { font-size: 13px; font-weight: 600; }
-  .meal-info p { font-size: 11px; color: var(--text2); margin-top: 2px; }
-  .meal-macros { text-align: right; font-size: 11px; color: var(--text2); }
-  .meal-macros .cal { font-size: 14px; font-weight: 700; color: var(--text); }
-  .macro-bar { display: flex; gap: 6px; margin-top: 6px; }
-  .macro-bar .m { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
-  .macro-bar .m.p { background: rgba(10,132,255,.15); color: var(--blue); }
-  .macro-bar .m.c { background: rgba(255,214,10,.15); color: var(--yellow); }
-  .macro-bar .m.f { background: rgba(255,159,10,.15); color: var(--orange); }
-  .add-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 12px; background: var(--card); border: 1px dashed var(--border); border-radius: 14px; color: var(--blue); font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 10px; }
-  .add-btn:active { background: var(--card-hover); }
+/* --- Meals --- */
+.meal-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.meal-item:last-child { border: none; }
+.meal-info h4 { font-size: 13px; font-weight: 600; }
+.meal-info p { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.meal-macros { text-align: right; font-size: 11px; color: var(--text2); }
+.meal-macros .cal { font-size: 14px; font-weight: 700; color: var(--text); }
+.macro-bar { display: flex; gap: 6px; margin-top: 6px; }
+.macro-bar .m { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+.macro-bar .m.p { background: rgba(10,132,255,.15); color: var(--blue); }
+.macro-bar .m.c { background: rgba(255,214,10,.15); color: var(--yellow); }
+.macro-bar .m.f { background: rgba(255,159,10,.15); color: var(--orange); }
+.add-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 12px; background: var(--card); border: 1px dashed var(--border); border-radius: 14px; color: var(--blue); font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 10px; }
+.add-btn:active { background: var(--card-hover); }
 
-  /* --- Modal --- */
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 100; display: none; align-items: flex-end; justify-content: center; }
-  .modal-overlay.show { display: flex; }
-  .modal { background: var(--card); border-radius: 20px 20px 0 0; width: 100%; max-width: 430px; padding: 20px 16px; padding-bottom: max(20px, var(--safe-b)); max-height: 80dvh; overflow-y: auto; }
-  .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
-  .modal label { display: block; font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; margin-top: 12px; }
-  .modal input, .modal select, .modal textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; color: var(--text); font-size: 14px; font-family: inherit; outline: none; }
-  .modal input:focus, .modal select:focus, .modal textarea:focus { border-color: var(--blue); }
-  .modal textarea { min-height: 60px; resize: vertical; }
-  .modal-actions { display: flex; gap: 8px; margin-top: 18px; }
-  .modal-actions button { flex: 1; padding: 12px; border-radius: 12px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
-  .btn-cancel { background: var(--bg); color: var(--text2); }
-  .btn-save { background: var(--blue); color: #fff; }
-  .btn-delete { background: var(--red); color: #fff; }
+/* --- Modal --- */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 100; display: none; align-items: flex-end; justify-content: center; }
+.modal-overlay.show { display: flex; }
+.modal { background: var(--card); border-radius: 20px 20px 0 0; width: 100%; max-width: 430px; padding: 20px 16px; padding-bottom: max(20px, var(--safe-b)); max-height: 80dvh; overflow-y: auto; }
+.modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+.modal label { display: block; font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; margin-top: 12px; }
+.modal input, .modal select, .modal textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; color: var(--text); font-size: 14px; font-family: inherit; outline: none; }
+.modal input:focus, .modal select:focus, .modal textarea:focus { border-color: var(--blue); }
+.modal textarea { min-height: 60px; resize: vertical; }
+.modal-actions { display: flex; gap: 8px; margin-top: 18px; }
+.modal-actions button { flex: 1; padding: 12px; border-radius: 12px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.btn-cancel { background: var(--bg); color: var(--text2); }
+.btn-save { background: var(--blue); color: #fff; }
+.btn-delete { background: var(--red); color: #fff; }
 
-  /* --- Reports --- */
-  .report-card { cursor: pointer; transition: background .15s; }
-  .report-card:active { background: var(--card-hover); }
-  .report-card .time { font-size: 11px; color: var(--text3); }
-  .report-type { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
-  .report-type.morning { color: var(--yellow); }
-  .report-type.post_workout { color: var(--green); }
-  .report-type.eod { color: var(--purple); }
-  .report-content { padding: 16px; }
-  .report-content h1, .report-content h2, .report-content h3 { color: var(--blue); }
-  .gen-btn { width: 100%; padding: 14px; background: var(--blue); color: #fff; border: none; border-radius: 14px; font-size: 14px; font-weight: 700; cursor: pointer; margin-bottom: 10px; }
-  .gen-btn:active { opacity: .8; }
-  .gen-btn:disabled { opacity: .4; }
+/* --- Reports --- */
+.report-card { cursor: pointer; transition: background .15s; }
+.report-card:active { background: var(--card-hover); }
+.report-card .time { font-size: 11px; color: var(--text3); }
+.report-type { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+.report-type.morning { color: var(--yellow); }
+.report-type.post_workout { color: var(--green); }
+.report-type.eod { color: var(--purple); }
+.report-content { padding: 16px; }
+.report-content h1, .report-content h2, .report-content h3 { color: var(--blue); }
+.gen-btn { width: 100%; padding: 14px; background: var(--blue); color: #fff; border: none; border-radius: 14px; font-size: 14px; font-weight: 700; cursor: pointer; margin-bottom: 10px; }
+.gen-btn:active { opacity: .8; }
+.gen-btn:disabled { opacity: .4; }
 
-  /* --- Summary bar --- */
-  .summary-bar { display: flex; gap: 8px; margin-bottom: 12px; }
-  .summary-item { flex: 1; background: var(--card); border-radius: 12px; padding: 10px; text-align: center; }
-  .summary-item .num { font-size: 18px; font-weight: 800; }
-  .summary-item .lbl { font-size: 9px; color: var(--text3); text-transform: uppercase; letter-spacing: .5px; margin-top: 2px; }
+/* --- Summary bar --- */
+.summary-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+.summary-item { flex: 1; background: var(--card); border-radius: 12px; padding: 10px; text-align: center; }
+.summary-item .num { font-size: 18px; font-weight: 800; }
+.summary-item .lbl { font-size: 9px; color: var(--text3); text-transform: uppercase; letter-spacing: .5px; margin-top: 2px; }
 
-  /* --- Onboarding --- */
-  #onboarding { display: none; position: fixed; inset: 0; background: var(--bg); z-index: 200; padding: 40px 24px; overflow-y: auto; }
-  #onboarding.show { display: block; }
-  #onboarding h1 { font-size: 28px; font-weight: 800; margin-bottom: 8px; }
-  #onboarding h1 span { color: var(--blue); }
-  #onboarding .intro { color: var(--text2); margin-bottom: 24px; font-size: 14px; }
-  #onboarding .field { margin-bottom: 16px; }
-  #onboarding label { display: block; font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
-  #onboarding input, #onboarding textarea, #onboarding select { width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; color: var(--text); font-size: 14px; font-family: inherit; outline: none; }
-  #onboarding textarea { min-height: 80px; resize: vertical; }
-  #onboarding input:focus, #onboarding textarea:focus { border-color: var(--blue); }
-  #onboard-btn { width: 100%; padding: 14px; background: var(--blue); color: #fff; border: none; border-radius: 14px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 24px; }
+/* --- Onboarding --- */
+#onboarding { display: none; position: fixed; inset: 0; background: var(--bg); z-index: 200; padding: 40px 24px; overflow-y: auto; }
+#onboarding.show { display: block; }
+#onboarding h1 { font-size: 28px; font-weight: 800; margin-bottom: 8px; }
+#onboarding h1 span { color: var(--blue); }
+#onboarding .intro { color: var(--text2); margin-bottom: 24px; font-size: 14px; }
+#onboarding .field { margin-bottom: 16px; }
+#onboarding label { display: block; font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+#onboarding input, #onboarding textarea, #onboarding select { width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; color: var(--text); font-size: 14px; font-family: inherit; outline: none; }
+#onboarding textarea { min-height: 80px; resize: vertical; }
+#onboarding input:focus, #onboarding textarea:focus { border-color: var(--blue); }
+#onboard-btn { width: 100%; padding: 14px; background: var(--blue); color: #fff; border: none; border-radius: 14px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 24px; }
 
-  /* Loading */
-  .loading { text-align: center; padding: 40px; color: var(--text3); }
-  .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .6s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+/* Loading */
+.loading { text-align: center; padding: 40px; color: var(--text3); }
+.spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-  /* Scrollbar */
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 </style>
 </head>
 <body>
 
 <!-- Onboarding -->
 <div id="onboarding">
-  <h1>PHYSIO<span>IQ</span></h1>
-  <p class="intro">Set up your personal body performance system. This only takes a minute.</p>
-  <div class="field"><label>Your Name</label><input type="text" id="ob-name" placeholder="Ruben"></div>
-  <div class="field"><label>Email</label><input type="email" id="ob-email" placeholder="you@email.com"></div>
-  <div class="field"><label>Age</label><input type="number" id="ob-age" placeholder="45"></div>
-  <div class="field"><label>Height</label><input type="text" id="ob-height" placeholder="5'10&quot;"></div>
-  <div class="field"><label>Current Weight (lb)</label><input type="number" id="ob-weight" placeholder="185" step="0.1"></div>
-  <div class="field"><label>Goal</label>
-    <select id="ob-goal">
-      <option value="lean_recomp">Lean Recomposition (lose fat, keep muscle)</option>
-      <option value="cut">Cut (aggressive fat loss)</option>
-      <option value="maintain">Maintain</option>
-      <option value="bulk">Build Muscle</option>
-    </select>
-  </div>
-  <div class="field"><label>Primary Activity</label><input type="text" id="ob-activity" placeholder="Swimming 5x/week, sauna post-swim"></div>
-  <div class="field"><label>Anything else PhysioIQ should know</label><textarea id="ob-notes" placeholder="Supplements, dietary restrictions, health conditions, etc."></textarea></div>
-  <button id="onboard-btn" onclick="doOnboard()">Start PhysioIQ</button>
+<h1>PHYSIO<span>IQ</span></h1>
+<p class="intro">Set up your personal body performance system. This only takes a minute.</p>
+<div class="field"><label>Your Name</label><input type="text" id="ob-name" placeholder="Ruben"></div>
+<div class="field"><label>Email</label><input type="email" id="ob-email" placeholder="you@email.com"></div>
+<div class="field"><label>Age</label><input type="number" id="ob-age" placeholder="45"></div>
+<div class="field"><label>Height</label><input type="text" id="ob-height" placeholder="5'10&quot;"></div>
+<div class="field"><label>Current Weight (lb)</label><input type="number" id="ob-weight" placeholder="185" step="0.1"></div>
+<div class="field"><label>Goal</label>
+<select id="ob-goal">
+<option value="lean_recomp">Lean Recomposition (lose fat, keep muscle)</option>
+<option value="cut">Cut (aggressive fat loss)</option>
+<option value="maintain">Maintain</option>
+<option value="bulk">Build Muscle</option>
+</select>
+</div>
+<div class="field"><label>Primary Activity</label><input type="text" id="ob-activity" placeholder="Swimming 5x/week, sauna post-swim"></div>
+<div class="field"><label>Anything else PhysioIQ should know</label><textarea id="ob-notes" placeholder="Supplements, dietary restrictions, health conditions, etc."></textarea></div>
+<button id="onboard-btn" onclick="doOnboard()">Start PhysioIQ</button>
 </div>
 
 <!-- Main App -->
 <div id="app">
-  <div id="header">
-    <h1>PHYSIO<span>IQ</span></h1>
-    <div class="sub" id="header-date"></div>
-  </div>
+<div id="header">
+<h1>PHYSIO<span>IQ</span></h1>
+<div class="sub" id="header-date"></div>
+</div>
 
-  <div class="panels">
-    <!-- Chat Panel -->
-    <div class="panel active" id="panel-chat">
-      <div id="chat-messages" style="position:absolute;inset:0;bottom:60px;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px;"></div>
-      <div id="chat-input-area" style="position:absolute;bottom:0;left:0;right:0;">
-        <textarea id="chat-input" rows="1" placeholder="Ask PhysioIQ anything..."></textarea>
-        <button id="chat-send" onclick="sendChat()">↑</button>
-      </div>
-    </div>
+<div class="panels">
+<!-- Chat Panel -->
+<div class="panel active" id="panel-chat">
+<div id="chat-messages" style="position:absolute;inset:0;bottom:60px;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px;"></div>
+<div id="chat-input-area" style="position:absolute;bottom:0;left:0;right:0;">
+<textarea id="chat-input" rows="1" placeholder="Ask PhysioIQ anything..."></textarea>
+<button id="chat-send" onclick="sendChat()">&#x2191;</button>
+</div>
+</div>
 
-    <!-- Meals Panel -->
-    <div class="panel" id="panel-meals">
-      <div class="summary-bar" id="meal-summary">
-        <div class="summary-item"><div class="num" id="ms-cal">0</div><div class="lbl">Calories</div></div>
-        <div class="summary-item"><div class="num blue" id="ms-p" style="color:var(--blue)">0g</div><div class="lbl">Protein</div></div>
-        <div class="summary-item"><div class="num" id="ms-c" style="color:var(--yellow)">0g</div><div class="lbl">Carbs</div></div>
-        <div class="summary-item"><div class="num" id="ms-f" style="color:var(--orange)">0g</div><div class="lbl">Fat</div></div>
-      </div>
-      <div class="add-btn" onclick="openMealModal()">+ Log Meal</div>
-      <div class="card"><div class="card-title">Today's Meals</div><div id="meal-list"><div class="loading">No meals logged yet</div></div></div>
-      <button class="gen-btn" style="background:var(--purple);margin-top:8px;" onclick="getMealRec()">Get Meal Recommendation</button>
-    </div>
+<!-- Meals Panel -->
+<div class="panel" id="panel-meals">
+<div class="summary-bar" id="meal-summary">
+<div class="summary-item"><div class="num" id="ms-cal">0</div><div class="lbl">Calories</div></div>
+<div class="summary-item"><div class="num blue" id="ms-p" style="color:var(--blue)">0g</div><div class="lbl">Protein</div></div>
+<div class="summary-item"><div class="num" id="ms-c" style="color:var(--yellow)">0g</div><div class="lbl">Carbs</div></div>
+<div class="summary-item"><div class="num" id="ms-f" style="color:var(--orange)">0g</div><div class="lbl">Fat</div></div>
+</div>
+<div class="add-btn" onclick="openMealModal()">+ Log Meal</div>
+<div class="card"><div class="card-title">Today's Meals</div><div id="meal-list"><div class="loading">No meals logged yet</div></div></div>
+<button class="gen-btn" style="background:var(--purple);margin-top:8px;" onclick="getMealRec()">Get Meal Recommendation</button>
+</div>
 
-    <!-- Reports Panel -->
-    <div class="panel" id="panel-reports">
-      <div style="display:flex;gap:6px;margin-bottom:12px;">
-        <button class="gen-btn" style="flex:1;background:var(--yellow);color:#000;" onclick="genReport('morning')">Morning</button>
-        <button class="gen-btn" style="flex:1;background:var(--green);color:#000;" onclick="genReport('post_workout')">Post-Workout</button>
-        <button class="gen-btn" style="flex:1;" onclick="genReport('eod')">EOD</button>
-      </div>
-      <div id="report-list"><div class="loading">No reports yet</div></div>
-      <div id="report-view" style="display:none;">
-        <button class="add-btn" onclick="closeReport()" style="border-style:solid;">← Back to Reports</button>
-        <div class="card report-content" id="report-content"></div>
-      </div>
-    </div>
-  </div>
+<!-- Reports Panel -->
+<div class="panel" id="panel-reports">
+<div style="display:flex;gap:6px;margin-bottom:12px;">
+<button class="gen-btn" style="flex:1;background:var(--yellow);color:#000;" onclick="genReport('morning')">Morning</button>
+<button class="gen-btn" style="flex:1;background:var(--green);color:#000;" onclick="genReport('post_workout')">Post-Workout</button>
+<button class="gen-btn" style="flex:1;" onclick="genReport('eod')">EOD</button>
+</div>
+<div id="report-list"><div class="loading">No reports yet</div></div>
+<div id="report-view" style="display:none;">
+<button class="add-btn" onclick="closeReport()" style="border-style:solid;">&#x2190; Back to Reports</button>
+<div class="card report-content" id="report-content"></div>
+</div>
+</div>
+</div>
 
-  <div id="tab-bar">
-    <div class="tab active" onclick="switchTab('chat')"><span class="icon">💬</span>Chat</div>
-    <div class="tab" onclick="switchTab('meals')"><span class="icon">🍽️</span>Meals</div>
-    <div class="tab" onclick="switchTab('reports')"><span class="icon">📊</span>Reports</div>
-  </div>
+<div id="tab-bar">
+<div class="tab active" onclick="switchTab('chat')"><span class="icon">&#x1F4AC;</span>Chat</div>
+<div class="tab" onclick="switchTab('meals')"><span class="icon">&#x1F37D;&#xFE0F;</span>Meals</div>
+<div class="tab" onclick="switchTab('reports')"><span class="icon">&#x1F4CA;</span>Reports</div>
+</div>
 </div>
 
 <!-- Meal Modal -->
 <div class="modal-overlay" id="meal-modal">
-  <div class="modal">
-    <h3 id="meal-modal-title">Log Meal</h3>
-    <label>Meal Type</label>
-    <select id="mm-type">
-      <option value="breakfast">Breakfast</option>
-      <option value="lunch">Lunch</option>
-      <option value="dinner">Dinner</option>
-      <option value="snack">Snack</option>
-    </select>
-    <label>What did you eat?</label>
-    <textarea id="mm-desc" placeholder="e.g., 6oz grilled salmon, 1 cup brown rice, steamed broccoli"></textarea>
-    <label>Calories (leave blank for AI estimate)</label>
-    <input type="number" id="mm-cal" placeholder="Auto-estimated if blank">
-    <div style="display:flex;gap:8px;">
-      <div style="flex:1"><label>Protein (g)</label><input type="number" id="mm-p" step="0.1"></div>
-      <div style="flex:1"><label>Carbs (g)</label><input type="number" id="mm-c" step="0.1"></div>
-      <div style="flex:1"><label>Fat (g)</label><input type="number" id="mm-f" step="0.1"></div>
-    </div>
-    <label>Notes</label>
-    <input type="text" id="mm-notes" placeholder="Optional">
-    <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeMealModal()">Cancel</button>
-      <button class="btn-delete" id="mm-delete-btn" style="display:none" onclick="deleteMeal()">Delete</button>
-      <button class="btn-save" onclick="saveMeal()">Save</button>
-    </div>
-  </div>
+<div class="modal">
+<h3 id="meal-modal-title">Log Meal</h3>
+<label>Meal Type</label>
+<select id="mm-type">
+<option value="breakfast">Breakfast</option>
+<option value="lunch">Lunch</option>
+<option value="dinner">Dinner</option>
+<option value="snack">Snack</option>
+</select>
+<label>What did you eat?</label>
+<textarea id="mm-desc" placeholder="e.g., 6oz grilled salmon, 1 cup brown rice, steamed broccoli"></textarea>
+<label>Calories (leave blank for AI estimate)</label>
+<input type="number" id="mm-cal" placeholder="Auto-estimated if blank">
+<div style="display:flex;gap:8px;">
+<div style="flex:1"><label>Protein (g)</label><input type="number" id="mm-p" step="0.1"></div>
+<div style="flex:1"><label>Carbs (g)</label><input type="number" id="mm-c" step="0.1"></div>
+<div style="flex:1"><label>Fat (g)</label><input type="number" id="mm-f" step="0.1"></div>
+</div>
+<label>Notes</label>
+<input type="text" id="mm-notes" placeholder="Optional">
+<div class="modal-actions">
+<button class="btn-cancel" onclick="closeMealModal()">Cancel</button>
+<button class="btn-delete" id="mm-delete-btn" style="display:none" onclick="deleteMeal()">Delete</button>
+<button class="btn-save" onclick="saveMeal()">Save</button>
+</div>
+</div>
 </div>
 
 <!-- Recommendation Modal -->
 <div class="modal-overlay" id="rec-modal">
-  <div class="modal">
-    <h3>Meal Recommendation</h3>
-    <div id="rec-content" style="white-space:pre-wrap;line-height:1.6;"></div>
-    <div class="modal-actions" style="margin-top:16px;">
-      <button class="btn-cancel" onclick="document.getElementById('rec-modal').classList.remove('show')">Close</button>
-    </div>
-  </div>
+<div class="modal">
+<h3>Meal Recommendation</h3>
+<div id="rec-content" style="white-space:pre-wrap;line-height:1.6;"></div>
+<div class="modal-actions" style="margin-top:16px;">
+<button class="btn-cancel" onclick="document.getElementById('rec-modal').classList.remove('show')">Close</button>
+</div>
+</div>
 </div>
 
 <script>
@@ -265,10 +265,10 @@
 let TOKEN = localStorage.getItem('physioiq_token') || '';
 let editingMealId = null;
 
-const API = '';  // same origin
+const API = ''; // same origin
 
 function headers() {
-  return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` };
+  return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN };
 }
 
 async function api(path, opts = {}) {
@@ -285,7 +285,6 @@ async function init() {
   document.getElementById('header-date').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
   if (!TOKEN) {
-    // Try login first (for existing users)
     try {
       const res = await fetch(API + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
       if (res.ok) {
@@ -336,7 +335,7 @@ async function doOnboard() {
     TOKEN = result.token;
     localStorage.setItem('physioiq_token', TOKEN);
     document.getElementById('onboarding').classList.remove('show');
-    addChatBubble('assistant', `Welcome to PhysioIQ, ${data.name}! I'm your personal body performance coach. Ask me anything about your training, nutrition, or recovery. Log your meals in the Meals tab, and I'll generate your reports in the Reports tab. Let's get to work.`);
+    addChatBubble('assistant', 'Welcome to PhysioIQ, ' + data.name + '! I\'m your personal body performance coach. Ask me anything about your training, nutrition, or recovery. Log your meals in the Meals tab, and I\'ll generate your reports in the Reports tab. Let\'s get to work.');
   } else {
     btn.disabled = false; btn.textContent = 'Start PhysioIQ';
     alert(result.error || 'Setup failed');
@@ -352,42 +351,15 @@ function buildSystemPrompt() {
   const activity = document.getElementById('ob-activity').value || 'Not specified';
   const notes = document.getElementById('ob-notes').value || '';
 
-  return `You are PhysioIQ, a personal body performance analyst, coach, and nutrition trainer for ${name}.
-
-## Your Identity
-- Direct, data-driven, professional — like a world-class sports scientist in their pocket.
-- Concise. Lead with data, then the recommendation.
-- Track patterns across days and weeks, not just single data points.
-
-## User Profile
-- Name: ${name} | Age: ${age} | Height: ${height} | Current Weight: ~${weight} lb
-- Goal: ${goal}
-- Activity: ${activity}
-${notes ? `- Additional Notes: ${notes}` : ''}
-
-## Readiness Scoring (from Garmin data)
-- PUSH (≥60 sleep + HRV rising): full intensity
-- MODERATE (40–59): standard training
-- DIAL BACK (<40 or HRV declining 2+ days): reduce volume
-- REST (<30 + poor sleep): recovery day
-
-## Meal Logging
-When the user logs a meal, estimate macros if not provided. Flag if daily targets exceeded. Track mercury for fish meals. Suggest adjustments for remaining meals.
-
-## Coaching Style
-- Tell the truth, not what they want to hear
-- Celebrate wins with data
-- Flag concerns early
-- Never catastrophize — setbacks are data points
-- Connect everything back to their goals`;
+  return 'You are PhysioIQ, a personal body performance analyst, coach, and nutrition trainer for ' + name + '.\n\n## Your Identity\n- Direct, data-driven, professional.\n- Concise. Lead with data, then the recommendation.\n- Track patterns across days and weeks.\n\n## User Profile\n- Name: ' + name + ' | Age: ' + age + ' | Height: ' + height + ' | Current Weight: ~' + weight + ' lb\n- Goal: ' + goal + '\n- Activity: ' + activity + '\n' + (notes ? '- Additional Notes: ' + notes + '\n' : '') + '\n## Coaching Style\n- Tell the truth, not what they want to hear\n- Celebrate wins with data\n- Flag concerns early\n- Never catastrophize\n- Connect everything back to their goals';
 }
 
 // ---------------------------------------------------------------------------
 // Tabs
 // ---------------------------------------------------------------------------
 function switchTab(tab) {
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
   document.getElementById('panel-' + tab).classList.add('active');
   document.querySelectorAll('.tab')[['chat','meals','reports'].indexOf(tab)].classList.add('active');
   if (tab === 'meals') loadMeals();
@@ -402,23 +374,22 @@ async function loadChatHistory() {
   const container = document.getElementById('chat-messages');
   container.innerHTML = '';
   if (Array.isArray(data) && data.length > 0) {
-    data.forEach(m => addChatBubble(m.role, m.content));
+    data.forEach(function(m) { addChatBubble(m.role, m.content); });
   } else {
-    addChatBubble('assistant', "Good to see you. What would you like to work on?");
+    addChatBubble('assistant', 'Good to see you. What would you like to work on?');
   }
 }
 
 function addChatBubble(role, content) {
   const container = document.getElementById('chat-messages');
   const div = document.createElement('div');
-  div.className = `msg ${role}`;
+  div.className = 'msg ' + role;
   if (role === 'assistant') {
-    // Simple markdown-like formatting
     content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     content = content.replace(/`(.*?)`/g, '<code>$1</code>');
     content = content.replace(/\n\n/g, '</p><p>');
     content = content.replace(/\n/g, '<br>');
-    div.innerHTML = `<p>${content}</p>`;
+    div.innerHTML = '<p>' + content + '</p>';
   } else {
     div.textContent = content;
   }
@@ -441,15 +412,19 @@ async function sendChat() {
 
   document.getElementById('chat-send').disabled = true;
 
-  const data = await api('/api/chat', { method: 'POST', body: JSON.stringify({ message: msg }) });
-
-  typing.remove();
-  document.getElementById('chat-send').disabled = false;
-
-  if (data.response) {
-    addChatBubble('assistant', data.response);
-  } else {
-    addChatBubble('assistant', `Error: ${data.error || 'Something went wrong'}`);
+  try {
+    const data = await api('/api/chat', { method: 'POST', body: JSON.stringify({ message: msg }) });
+    typing.remove();
+    document.getElementById('chat-send').disabled = false;
+    if (data.response) {
+      addChatBubble('assistant', data.response);
+    } else {
+      addChatBubble('assistant', 'Error: ' + (data.error || 'Something went wrong'));
+    }
+  } catch (e) {
+    typing.remove();
+    document.getElementById('chat-send').disabled = false;
+    addChatBubble('assistant', 'Error: Network request failed. Please try again.');
   }
 }
 
@@ -478,35 +453,35 @@ async function loadMeals() {
   }
 
   updateMealSummary(data);
-  list.innerHTML = data.map(m => `
-    <div class="meal-item" onclick="editMeal(${m.id})">
-      <div class="meal-info">
-        <h4>${m.meal_type.charAt(0).toUpperCase() + m.meal_type.slice(1)}</h4>
-        <p>${m.description.length > 50 ? m.description.slice(0,50)+'...' : m.description}</p>
-        <div class="macro-bar">
-          ${m.protein_g ? `<span class="m p">P ${Math.round(m.protein_g)}g</span>` : ''}
-          ${m.carbs_g ? `<span class="m c">C ${Math.round(m.carbs_g)}g</span>` : ''}
-          ${m.fat_g ? `<span class="m f">F ${Math.round(m.fat_g)}g</span>` : ''}
-        </div>
-      </div>
-      <div class="meal-macros">
-        <div class="cal">${m.calories || '—'}</div>
-        <div>kcal</div>
-      </div>
-    </div>
-  `).join('');
+  list.innerHTML = data.map(function(m) {
+    return '<div class="meal-item" onclick="editMeal(' + m.id + ')">' +
+      '<div class="meal-info">' +
+        '<h4>' + m.meal_type.charAt(0).toUpperCase() + m.meal_type.slice(1) + '</h4>' +
+        '<p>' + (m.description.length > 50 ? m.description.slice(0,50)+'...' : m.description) + '</p>' +
+        '<div class="macro-bar">' +
+          (m.protein_g ? '<span class="m p">P ' + Math.round(m.protein_g) + 'g</span>' : '') +
+          (m.carbs_g ? '<span class="m c">C ' + Math.round(m.carbs_g) + 'g</span>' : '') +
+          (m.fat_g ? '<span class="m f">F ' + Math.round(m.fat_g) + 'g</span>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="meal-macros">' +
+        '<div class="cal">' + (m.calories || '—') + '</div>' +
+        '<div>kcal</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
 }
 
 function updateMealSummary(meals) {
-  let cal = 0, p = 0, c = 0, f = 0;
-  meals.forEach(m => { cal += m.calories || 0; p += m.protein_g || 0; c += m.carbs_g || 0; f += m.fat_g || 0; });
+  var cal = 0, p = 0, c = 0, f = 0;
+  meals.forEach(function(m) { cal += m.calories || 0; p += m.protein_g || 0; c += m.carbs_g || 0; f += m.fat_g || 0; });
   document.getElementById('ms-cal').textContent = cal;
   document.getElementById('ms-p').textContent = Math.round(p) + 'g';
   document.getElementById('ms-c').textContent = Math.round(c) + 'g';
   document.getElementById('ms-f').textContent = Math.round(f) + 'g';
 }
 
-function openMealModal(meal = null) {
+function openMealModal(meal) {
   editingMealId = meal ? meal.id : null;
   document.getElementById('meal-modal-title').textContent = meal ? 'Edit Meal' : 'Log Meal';
   document.getElementById('mm-type').value = meal ? meal.meal_type : 'lunch';
@@ -526,15 +501,15 @@ function closeMealModal() {
 }
 
 async function saveMeal() {
-  const data = {
+  var data = {
     meal_type: document.getElementById('mm-type').value,
     description: document.getElementById('mm-desc').value,
     notes: document.getElementById('mm-notes').value || null
   };
-  const cal = document.getElementById('mm-cal').value;
-  const p = document.getElementById('mm-p').value;
-  const c = document.getElementById('mm-c').value;
-  const f = document.getElementById('mm-f').value;
+  var cal = document.getElementById('mm-cal').value;
+  var p = document.getElementById('mm-p').value;
+  var c = document.getElementById('mm-c').value;
+  var f = document.getElementById('mm-f').value;
   if (cal) data.calories = parseInt(cal);
   if (p) data.protein_g = parseFloat(p);
   if (c) data.carbs_g = parseFloat(c);
@@ -543,7 +518,7 @@ async function saveMeal() {
   if (!data.description) { alert('Please describe what you ate'); return; }
 
   if (editingMealId) {
-    await api(`/api/meals/${editingMealId}`, { method: 'PUT', body: JSON.stringify(data) });
+    await api('/api/meals/' + editingMealId, { method: 'PUT', body: JSON.stringify(data) });
   } else {
     await api('/api/meals', { method: 'POST', body: JSON.stringify(data) });
   }
@@ -552,35 +527,35 @@ async function saveMeal() {
 }
 
 async function editMeal(id) {
-  const meals = await api('/api/meals');
-  const meal = meals.find(m => m.id === id);
+  var meals = await api('/api/meals');
+  var meal = meals.find(function(m) { return m.id === id; });
   if (meal) openMealModal(meal);
 }
 
 async function deleteMeal() {
   if (!editingMealId) return;
   if (confirm('Delete this meal?')) {
-    await api(`/api/meals/${editingMealId}`, { method: 'DELETE' });
+    await api('/api/meals/' + editingMealId, { method: 'DELETE' });
     closeMealModal();
     loadMeals();
   }
 }
 
 async function getMealRec() {
-  const btn = event.target;
+  var btn = event.target;
   btn.disabled = true; btn.textContent = 'Thinking...';
-  const data = await api('/api/meals/recommend', { method: 'POST', body: JSON.stringify({ meal_type: 'next' }) });
+  var data = await api('/api/meals/recommend', { method: 'POST', body: JSON.stringify({ meal_type: 'next' }) });
   btn.disabled = false; btn.textContent = 'Get Meal Recommendation';
   document.getElementById('rec-content').textContent = data.recommendation || data.error || 'No recommendation available';
   document.getElementById('rec-modal').classList.add('show');
 }
 
 // ---------------------------------------------------------------------------
-// Reports
+// Reports — ASYNC with polling (no more browser freeze!)
 // ---------------------------------------------------------------------------
 async function loadReports() {
-  const data = await api('/api/reports');
-  const list = document.getElementById('report-list');
+  var data = await api('/api/reports');
+  var list = document.getElementById('report-list');
   document.getElementById('report-view').style.display = 'none';
   list.style.display = 'block';
 
@@ -589,17 +564,25 @@ async function loadReports() {
     return;
   }
 
-  const typeLabels = { morning: '☀️ Morning Report', post_workout: '💪 Post-Workout Report', eod: '🌙 End of Day Report' };
-  list.innerHTML = data.map(r => `
-    <div class="card report-card" onclick="viewReport(${r.id})">
-      <div class="report-type ${r.report_type}">${typeLabels[r.report_type] || r.report_type}</div>
-      <div class="time">${new Date(r.created_at + 'Z').toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</div>
-    </div>
-  `).join('');
+  var typeLabels = { morning: '☀️ Morning Report', post_workout: '💪 Post-Workout Report', eod: '🌙 End of Day Report' };
+  list.innerHTML = data.map(function(r) {
+    var statusBadge = '';
+    if (r.status === 'generating') {
+      statusBadge = '<div style="margin-top:4px;"><span class="spinner" style="width:14px;height:14px;border-width:1.5px;"></span> <span style="color:var(--text3);font-size:11px;">Generating...</span></div>';
+    } else if (r.status === 'error') {
+      statusBadge = '<div style="margin-top:4px;color:var(--red);font-size:11px;">Generation failed</div>';
+    }
+    var clickHandler = (r.status === 'complete') ? ' onclick="viewReport(' + r.id + ')"' : '';
+    return '<div class="card report-card"' + clickHandler + '>' +
+      '<div class="report-type ' + r.report_type + '">' + (typeLabels[r.report_type] || r.report_type) + '</div>' +
+      '<div class="time">' + new Date(r.created_at + 'Z').toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + '</div>' +
+      statusBadge +
+    '</div>';
+  }).join('');
 }
 
 async function viewReport(id) {
-  const data = await api(`/api/reports/${id}`);
+  var data = await api('/api/reports/' + id);
   if (data.html_content) {
     document.getElementById('report-list').style.display = 'none';
     document.getElementById('report-view').style.display = 'block';
@@ -613,19 +596,73 @@ function closeReport() {
 }
 
 async function genReport(type) {
-  const btns = document.querySelectorAll('.gen-btn');
-  btns.forEach(b => b.disabled = true);
+  var btns = document.querySelectorAll('.gen-btn');
+  btns.forEach(function(b) { b.disabled = true; });
 
-  const data = await api('/api/reports/generate', { method: 'POST', body: JSON.stringify({ type }) });
+  // Show loading state immediately — page stays responsive!
+  var list = document.getElementById('report-list');
+  list.innerHTML = '<div style="text-align:center;padding:40px;">' +
+    '<div class="spinner" style="width:28px;height:28px;border-width:3px;"></div>' +
+    '<div style="color:var(--text3);margin-top:12px;font-size:13px;">Generating report...<br>This takes 30–60 seconds</div>' +
+    '</div>';
 
-  btns.forEach(b => b.disabled = false);
+  try {
+    var data = await api('/api/reports/generate', { method: 'POST', body: JSON.stringify({ type: type }) });
 
-  if (data.success) {
+    if (data.success && data.report_id) {
+      // Poll for completion — page stays responsive during generation
+      await pollReport(data.report_id);
+    } else {
+      btns.forEach(function(b) { b.disabled = false; });
+      alert(data.error || 'Failed to start report generation');
+      loadReports();
+    }
+  } catch (e) {
+    btns.forEach(function(b) { b.disabled = false; });
+    alert('Network error: ' + e.message);
     loadReports();
-    viewReport(data.report_id);
-  } else {
-    alert(data.error || 'Failed to generate report');
   }
+}
+
+async function pollReport(reportId) {
+  var btns = document.querySelectorAll('.gen-btn');
+  var list = document.getElementById('report-list');
+  var startTime = Date.now();
+
+  for (var i = 0; i < 60; i++) {  // Poll for up to ~3 minutes
+    await new Promise(function(r) { setTimeout(r, 3000); });  // 3s between polls
+
+    try {
+      var status = await api('/api/reports/' + reportId + '/status');
+
+      if (status.status === 'complete') {
+        btns.forEach(function(b) { b.disabled = false; });
+        loadReports();
+        viewReport(reportId);
+        return;
+      } else if (status.status === 'error') {
+        btns.forEach(function(b) { b.disabled = false; });
+        alert('Report generation failed: ' + (status.error || 'Unknown error'));
+        loadReports();
+        return;
+      }
+
+      // Still generating — update elapsed time
+      var elapsed = Math.round((Date.now() - startTime) / 1000);
+      list.innerHTML = '<div style="text-align:center;padding:40px;">' +
+        '<div class="spinner" style="width:28px;height:28px;border-width:3px;"></div>' +
+        '<div style="color:var(--text3);margin-top:12px;font-size:13px;">Generating report... ' + elapsed + 's<br>Page stays responsive while working</div>' +
+        '</div>';
+    } catch (e) {
+      // Network error during poll — keep trying
+      console.log('Poll error:', e);
+    }
+  }
+
+  // Timeout after ~3 minutes
+  btns.forEach(function(b) { b.disabled = false; });
+  alert('Report generation timed out. The report may still be processing — check back in a moment.');
+  loadReports();
 }
 
 // ---------------------------------------------------------------------------
