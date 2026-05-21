@@ -877,80 +877,128 @@ def generate_report(user_id, report_type="morning", report_id=None):
 
     html_style_instructions = """
 
-OUTPUT FORMAT: You MUST return ONLY raw HTML content (no markdown, no ```html fences, no doctype/html/head/body tags — just the inner content that goes inside a div).
+OUTPUT FORMAT: Return a <style> block followed by HTML content. No markdown fences, no ```html, no doctype/html/head/body tags. Just <style>...</style> then the HTML divs.
 
-STYLING RULES — follow these exactly:
-- Dark theme background: #0d0d0d (page), #1c1c1e (cards), #2c2c2e (nested elements)
-- Font: -apple-system, 'Inter', 'SF Pro', sans-serif
-- Max-width: 393px; margin: 0 auto on the wrapper
-- Color palette: green=#30d158, yellow=#ffd60a, orange=#ff9f0a, blue=#0a84ff, red=#ff453a, teal=#64d2ff, purple=#bf5af2, text=#f5f5f7, muted=#a1a1a6, dim=#636366
+START YOUR OUTPUT WITH THIS EXACT CSS (copy it verbatim, do not modify):
 
-SECTION CARD STYLE (use for every section):
-<div style="background:#1c1c1e;border-radius:14px;padding:14px 16px;margin-bottom:10px;">
-  <div style="font-size:11px;font-weight:700;color:SECTION_COLOR;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;">SECTION_TITLE</div>
-  <!-- section content here -->
-</div>
+<style>
+:root{--bg:#0d0d0d;--card:#1c1c1e;--line:#2a2a2c;--txt:#f0f0f0;--dim:#9a9a9d;
+  --green:#4dff88;--yellow:#ffe066;--orange:#ffb347;--blue:#4da6ff;--red:#ff6b6b;--purple:#cc88ff;--teal:#66ccff}
+*{box-sizing:border-box;margin:0;padding:0}
+.rpt{color:var(--txt);font-family:'Inter',-apple-system,sans-serif;font-size:14px;line-height:1.45;padding:14px 12px;max-width:393px;margin:0 auto}
+.rpt h1{font-size:18px;font-weight:700;letter-spacing:-.3px}
+.rpt h2{font-size:13px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px}
+.card{background:var(--card);border-radius:12px;padding:14px;margin-bottom:12px;border:1px solid var(--line)}
+.card.alert{border-color:var(--orange);background:rgba(255,179,71,.06)}
+.card.alert-red{border-color:var(--red);background:rgba(255,107,107,.06)}
+.card.alert-green{border-color:var(--green);background:rgba(77,255,136,.05)}
+.row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:none}
+.row .lbl{color:var(--dim);font-size:13px}
+.row .val{font-weight:600;font-size:14px}
+.badge{display:inline-block;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:600;letter-spacing:.3px}
+.b-green{background:rgba(77,255,136,.15);color:var(--green)}
+.b-yellow{background:rgba(255,224,102,.15);color:var(--yellow)}
+.b-orange{background:rgba(255,179,71,.15);color:var(--orange)}
+.b-red{background:rgba(255,107,107,.15);color:var(--red)}
+.b-blue{background:rgba(77,166,255,.15);color:var(--blue)}
+.b-purple{background:rgba(204,136,255,.15);color:var(--purple)}
+.hdr{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.hdr-top{display:flex;justify-content:space-between;align-items:center}
+.hdr .date{color:var(--dim);font-size:12px}
+.hdr .badges{display:flex;gap:6px;flex-wrap:wrap}
+.kpi{display:flex;gap:8px;margin-top:10px}
+.kpi-box{flex:1;background:rgba(255,255,255,.03);border-radius:8px;padding:10px;text-align:center}
+.kpi-num{font-size:18px;font-weight:700;color:var(--txt)}
+.kpi-lbl{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;margin-top:3px}
+.bar-wrap{margin:8px 0}
+.bar-lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-bottom:3px}
+.bar{height:8px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px}
+.calc{background:rgba(0,0,0,.25);border-radius:6px;padding:8px;margin-top:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--dim);line-height:1.55}
+.calc .ttl{color:var(--txt);font-weight:600}
+.foot{text-align:center;color:var(--dim);font-size:11px;padding:14px 0 4px}
+.note{font-size:12px;color:var(--dim);font-style:italic;margin-top:6px}
+.meal-tbl{width:100%;font-size:11px;margin-top:6px;border-collapse:collapse}
+.meal-tbl th{text-align:left;color:var(--dim);font-weight:500;padding:4px 3px;border-bottom:1px solid var(--line)}
+.meal-tbl td{padding:4px 3px;border-bottom:1px solid var(--line)}
+.meal-tbl .sec{color:var(--purple);font-weight:600;background:rgba(204,136,255,.05)}
+.meal-tbl .num{text-align:right;color:var(--blue)}
+.meal-tbl .sub{color:var(--dim);font-style:italic}
+.meal-tbl .tot{font-weight:700;color:var(--green);background:rgba(77,255,136,.06)}
+</style>
 
-DATA ROW STYLE:
-<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
-  <span style="color:#a1a1a6;font-size:12px;">Label</span>
-  <span style="font-size:16px;font-weight:700;color:VALUE_COLOR;">Value</span>
-</div>
+Then wrap ALL content in <div class="rpt">...</div>.
 
-BADGE STYLE:
-<span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(R,G,B,0.15);color:BADGE_COLOR;">Badge Text</span>
+HTML PATTERNS TO USE (use CSS classes, NOT inline styles):
 
-DELTA STYLE (for showing changes):
-<span style="color:#30d158;font-size:11px;font-weight:500;">↑ +14 vs yesterday (+27%)</span>  (green for positive)
-<span style="color:#ff453a;font-size:11px;font-weight:500;">↓ −3 vs yesterday (−5%)</span>  (red for negative)
-
-SLEEP BAR STYLE:
-<div style="height:10px;background:rgba(255,255,255,.06);border-radius:5px;overflow:hidden;display:flex;">
-  <div style="width:DEEP%;height:100%;background:#30d158;"></div>
-  <div style="width:LIGHT%;height:100%;background:#ffd60a;"></div>
-  <div style="width:REM%;height:100%;background:#bf5af2;"></div>
-  <div style="width:AWAKE%;height:100%;background:#ff453a;"></div>
-</div>
-
-KPI BOX STYLE (for key numbers):
-<div style="display:flex;gap:8px;margin-top:10px;">
-  <div style="flex:1;background:rgba(255,255,255,.03);border-radius:8px;padding:10px;text-align:center;">
-    <div style="font-size:18px;font-weight:700;color:#30d158;">VALUE</div>
-    <div style="font-size:10px;color:#a1a1a6;text-transform:uppercase;letter-spacing:.4px;margin-top:3px;">LABEL</div>
+HEADER:
+<div class="hdr">
+  <div class="hdr-top">
+    <div><h1>Report Title</h1><div class="date">Day Date · Location · Details</div></div>
+    <div class="badges"><span class="badge b-green">Badge</span><span class="badge b-red">Badge</span></div>
   </div>
 </div>
 
-TIMELINE ROW STYLE:
-<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #2a2a2c;">
-  <div style="flex:0 0 75px;color:#0a84ff;font-weight:600;font-size:12px;">TIME</div>
-  <div style="flex:1;font-size:13px;">
-    <div style="color:#f5f5f7;font-weight:600;margin-bottom:2px;">WHAT</div>
-    <div style="color:#a1a1a6;font-size:11px;">DETAIL</div>
-  </div>
+CARD (normal, alert-green, alert-red, alert):
+<div class="card">
+  <h2>Section Title</h2>
+  <!-- content -->
+</div>
+<div class="card alert-green"><h2 style="color:var(--green)">Positive Section</h2>...</div>
+<div class="card alert-red"><h2 style="color:var(--red)">Warning Section</h2>...</div>
+<div class="card alert"><h2 style="color:var(--orange)">Caution Section</h2>...</div>
+
+DATA ROW:
+<div class="row"><span class="lbl">Label</span><span class="val">Value</span></div>
+<div class="row"><span class="lbl">Label</span><span class="val" style="color:var(--red)">Red Value</span></div>
+
+KPI BOXES:
+<div class="kpi">
+  <div class="kpi-box"><div class="kpi-num" style="color:var(--green)">2,925</div><div class="kpi-lbl">TDEE</div></div>
+  <div class="kpi-box"><div class="kpi-num" style="color:var(--yellow)">2,125</div><div class="kpi-lbl">target</div></div>
 </div>
 
-ENERGY CALC STYLE:
-<div style="background:rgba(0,0,0,.25);border-radius:6px;padding:8px;margin-top:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#a1a1a6;line-height:1.55;">
-  calculations here with <span style="color:#f5f5f7;font-weight:600;">totals bolded</span>
+PROGRESS BAR:
+<div class="bar-wrap">
+  <div class="bar-lbl"><span>Protein 205g</span><span>vs 220g target (93%)</span></div>
+  <div class="bar"><div class="bar-fill" style="width:93%;background:var(--green)"></div></div>
 </div>
 
-CONTEXTUAL NOTE STYLE:
-<div style="font-size:12px;color:#a1a1a6;font-style:italic;margin-top:6px;">Note text here</div>
--- OR for important coach commentary (not italic, white text): --
-<div style="font-size:12px;color:#f5f5f7;margin-top:6px;">Commentary here with <b>key points bold</b></div>
+MONOSPACE CALCULATION:
+<div class="calc">
+  BMR ............................... 1,620<br>
+  NEAT + TEF .......................... 480<br>
+  <span class="ttl">TDEE ............................. 2,925</span>
+</div>
 
-ALERT CARD (for supercompensation, warnings, etc.):
-<div style="background:#1c1c1e;border-radius:14px;padding:14px 16px;margin-bottom:10px;border:1px solid #30d158;background:rgba(48,209,88,.07);">
-  green border for positive alerts
-</div>
-<div style="background:#1c1c1e;border-radius:14px;padding:14px 16px;margin-bottom:10px;border:1px solid #ff9f0a;background:rgba(255,159,10,.06);">
-  orange border for warnings
-</div>
+MEAL TABLE:
+<table class="meal-tbl">
+  <tr><th>Item</th><th class="num">P</th><th class="num">Cal</th><th class="num">C</th></tr>
+  <tr class="sec"><td colspan="4">MEAL TIMING ✓</td></tr>
+  <tr><td>Food Item</td><td class="num">30</td><td class="num">160</td><td class="num">4</td></tr>
+  <tr class="sub"><td>subtotal</td><td class="num">30</td><td class="num">160</td><td class="num">4</td></tr>
+  <tr class="tot"><td>DAY TOTAL</td><td class="num">205</td><td class="num">2,004</td><td class="num">141</td></tr>
+</table>
+
+NOTE (italic muted):
+<div class="note">Contextual note here</div>
+NOTE (important, white text):
+<div class="note" style="color:var(--txt);font-style:normal">Important commentary with <b>bold key points</b></div>
 
 FOOTER:
-<div style="text-align:center;color:#636366;font-size:11px;padding:14px 0 4px;">Summary line</div>
+<div class="foot">PhysioIQ · Type · Date · Key Stats Summary</div>
 
-Use these color assignments: green=#30d158 for positive/recovery, yellow=#ffd60a for warnings/sleep, orange=#ff9f0a for alerts/nutrition, blue=#0a84ff for data/metrics, red=#ff453a for critical, teal=#64d2ff for hydration/info, purple=#bf5af2 for summary/planning.
+CRITICAL RULES:
+- Use CSS class names from the stylesheet, NOT inline styles (except color overrides on .val and .kpi-num)
+- Every section must be a .card div
+- Include contextual .note paragraphs in EVERY card explaining what the numbers MEAN
+- Use .alert-green for positive findings, .alert-red for warnings/flags, .alert for cautions
+- Include a .meal-tbl with FULL meal breakdown when meal data is available
+- Include .bar-wrap progress bars for macro tracking
+- Include .calc monospace blocks for TDEE/energy calculations
+- Use .badge spans for status indicators
+- ALWAYS include a .foot footer line summarizing key stats
 """
 
     prompts = {
@@ -1024,26 +1072,35 @@ IMPORTANT: The morning report must NOT include workout intensity details, swim y
 
 {html_style_instructions}{data_note}""",
 
-        "post_workout": f"""Generate Ruben's PhysioIQ Post-Workout Report. Include rich contextual commentary.
+        "post_workout": f"""Generate Ruben's PhysioIQ Post-Workout Report. This must be RICH, detailed, data-driven — not generic.
 
-CONTEXT: The data section above includes:
-- Garmin data (which captures swim activity — duration, HR, calories, training effect, laps if available)
-- Workout logs (lift data with exercises, sets, reps, weights — submitted by the user)
-- Meals logged so far today
+CONTEXT: The data section above includes Garmin data (swim activity), workout logs (lift data), and meals logged today. Use ALL of it.
 
-Use ALL available data to build a comprehensive post-workout report. The swim data comes from Garmin; the lift data comes from the workout log.
+REQUIRED SECTIONS (use the CSS classes from the stylesheet):
 
-REQUIRED SECTIONS:
-1. HEADER — Post-workout report title with timestamp and workout type (e.g., "SSL Swim + Lower/Bicep/Core Lift")
-2. SWIM SUMMARY — Pull from Garmin activity data: duration, distance, avg HR, max HR, training effect, pace, laps. Compare to targets. Rate performance. (use blue header)
-3. LIFT SUMMARY — Pull from workout log: exercises performed, total volume (sets × reps × weight), highlight PRs or notable effort. Note any extras the user added (e.g., additional calf sets). (use green header)
-4. COMBINED WORKOUT ANALYSIS — Total training time, estimated calories burned (swim + lift + sauna), training load assessment, how body handled the double session. (use purple header)
-5. RECOVERY STATUS — Body battery drain, HR recovery, stress response, comparison to typical (use teal header)
-6. CALORIC IMPACT — Full energy calculation: swim burn (from Garmin or MET estimate) + lift burn (estimate from volume) + sauna burn. Updated TDEE and net balance. (use orange header)
-7. RECOVERY NUTRITION — SPECIFIC foods to eat NOW for recovery with macro targets. Account for what's already been eaten today. (use blue header)
-8. REMAINING DAILY TARGETS — Updated macro/calorie targets accounting for workout burn and meals so far. Show what's left to hit targets. (use yellow header)
-9. HYDRATION RECOVERY — Fluid replacement needs with specific amounts (use teal header)
-10. COACH'S NOTE — Performance observations across both workouts, what went well, form notes, any adjustments for next session. Reference specific exercises and numbers from the lift log. (use green header)
+1. HEADER (.hdr) — "PW Report" title. Date line with day, location, workout details. Badges for swim rating and any nutrition flags.
+
+2. SWIM SUMMARY (.card.alert-green if good, .card if neutral) — h2 with "Swim · [Assessment]". Data rows (.row) for: Distance, Moving time, Pace, Avg HR · Max, TE Aerobic, MET estimate. Include a .note with coaching interpretation — compare to recent sessions, rate the effort, explain what the intensity means for recovery.
+
+3. LIFT SUMMARY (.card) — If workout log data exists: h2 with "Lift · [Type]". List exercises, sets, reps, weights. Total volume. Highlight PRs. If no lift data, note it.
+
+4. TDEE / ENERGY BALANCE (.card) — h2 "TDEE · Pre-Workout Estimate". KPI boxes (.kpi) showing TDEE, eat target, and planned intake. Full monospace calculation (.calc) showing BMR, NEAT+TEF, swim burn (MET × weight × duration), lift burn, sauna, total. Include a .note explaining the numbers.
+
+5. NUTRITION FLAG (.card.alert-red if bad, .card.alert if caution) — Identify the BIGGEST nutrition issue. Show planned vs target with gap. Explain WHY it matters (glycogen, recovery, etc). Give SPECIFIC fix recommendations with exact foods and amounts.
+
+6. FULL MEAL LOG (.card with .meal-tbl) — h2 "Full Meal Log". Build a complete meal table using .meal-tbl with columns: Item, P (protein g), Cal, C (carbs g). Group by meal timing (.sec rows). Include .sub subtotal rows and .tot day total row. This is CRITICAL — always include the full meal breakdown.
+
+7. MACRO ANALYSIS (.card with .bar-wrap) — Progress bars for Protein, Calories, and Carbs showing actual vs target with percentages. Color code: green if >90%, yellow if 70-90%, red if <70%. Include .note with assessment.
+
+8. WHAT'S WORKING (.card.alert-green) — h2 "What's Working ✓". List specific things done right today with bullet points. Be genuine and data-specific.
+
+9. RECOVERY SNAPSHOT (.card) — Current readiness, HRV, RHR, sleep from last night. .note explaining recovery state.
+
+10. SUPPLEMENTS REMAINING (.card) — What supplements are left for today with timing. Note calcium citrate rules.
+
+11. TONIGHT + TOMORROW (.card) — Bed time target, sleep target, tomorrow's plan. .note tying it back to today's data.
+
+12. FOOTER (.foot) — Single line: "PhysioIQ · PW · DATE · Workout type · TDEE value · Plan value · KEY ACTION"
 
 {html_style_instructions}{data_note}""",
 
