@@ -433,7 +433,10 @@ def build_context(user_id, include_today=True):
                 context_parts.append(f"  Sleep Score 7-day avg: {sum(sleep_vals)/len(sleep_vals):.1f}")
 
             # Day-by-day for trend visualization
-            context_parts.append(f"  Day-by-day: {', '.join(f'{r[\"date\"]}:HRV={r[\"hrv\"]}/RHR={r[\"resting_hr\"]}/Wt={r[\"weight_lb\"]}' for r in week_rows)}")
+            day_parts = []
+            for r in week_rows:
+                day_parts.append(f"{r['date']}:HRV={r['hrv']}/RHR={r['resting_hr']}/Wt={r['weight_lb']}")
+            context_parts.append(f"  Day-by-day: {', '.join(day_parts)}")
 
     # Today's meals
     meals = db.execute(
