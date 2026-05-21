@@ -12,6 +12,7 @@ import hmac
 import time
 import logging
 import traceback
+import threading
 from datetime import datetime, date, timedelta
 from functools import wraps
 from pathlib import Path
@@ -43,6 +44,21 @@ app.config["APP_SECRET"] = os.environ.get("APP_SECRET", "change-me-in-production
 app.config["GARMIN_EMAIL"] = os.environ.get("GARMIN_EMAIL", "")
 app.config["GARMIN_PASSWORD"] = os.environ.get("GARMIN_PASSWORD", "")
 
+# CORS — allow lift tracker and other PhysioIQ tools to POST workout data
+ALLOWED_ORIGINS = [
+    "https://zippy-pastelito-b0f74c.netlify.app",
+    "https://physioiq-pwa.onrender.com",
+]
+
+@app.after_request
+def add_cors_headers(response):
+    origin = request.headers.get("Origin", "")
+    if origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    return response
+
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
@@ -54,6 +70,14 @@ def get_db():
         g.db.execute("PRAGMA journal_mode=WAL")
         g.db.execute("PRAGMA foreign_keys=ON")
     return g.db
+
+def get_standalone_db():
+    """Get a DB connection outside of Flask request context (for background threads)."""
+    db = sqlite3.connect(app.config["DATABASE"])
+    db.row_factory = sqlite3.Row
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA foreign_keys=ON")
+    return db
 
 @app.teardown_appcontext
 def close_db(exception):
@@ -113,8 +137,9 @@ def init_db():
             user_id INTEGER NOT NULL REFERENCES users(id),
             date TEXT NOT NULL,
             report_type TEXT NOT NULL,  -- morning, post_workout, eod
-            html_content TEXT NOT NULL,
+            html_content TEXT NOT NULL DEFAULT '',
             metrics_json TEXT,
+            status TEXT NOT NULL DEFAULT 'complete',  -- generating, complete, error
             created_at TEXT DEFAULT (datetime('now'))
         );
 
@@ -808,8 +833,8 @@ def pull_garmin_data(user_id, target_date=None, force=False):
 # Report Generation
 # ---------------------------------------------------------------------------
 
-def generate_report(user_id, report_type="morning"):
-    """Generate a PhysioIQ report using Claude."""
+def generate_report(user_id, report_type="morning", report_id=None):
+    """Generate a PhysioIQ report using Claude. If report_id is given, updates that row (async mode)."""
     client = get_claude_client()
     if not client:
         return {"error": "Anthropic API key not configured"}
@@ -1086,17 +1111,32 @@ REQUIRED SECTIONS:
             html = html[:-3]
         html = html.strip()
 
-        # Store report
-        db.execute("""
-            INSERT INTO reports (user_id, date, report_type, html_content, metrics_json)
-            VALUES (?, ?, ?, ?, ?)
-        """, (user_id, today, report_type, html, context))
+        # Store report — either update existing placeholder or insert new
+        if report_id:
+            db.execute("""
+                UPDATE reports SET html_content = ?, metrics_json = ?, status = 'complete'
+                WHERE id = ?
+            """, (html, context, report_id))
+        else:
+            db.execute("""
+                INSERT INTO reports (user_id, date, report_type, html_content, metrics_json, status)
+                VALUES (?, ?, ?, ?, ?, 'complete')
+            """, (user_id, today, report_type, html, context))
+            report_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
         db.commit()
 
-        report_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
         return {"success": True, "report_id": report_id, "html": html}
 
     except Exception as e:
+        logger.error("Report generation failed: %s", str(e))
+        if report_id:
+            try:
+                db.execute("""
+                    UPDATE reports SET html_content = ?, status = 'error' WHERE id = ?
+                """, (f"Error: {str(e)}", report_id))
+                db.commit()
+            except Exception:
+                pass
         return {"error": str(e)}
 
 # ---------------------------------------------------------------------------
@@ -1329,6 +1369,40 @@ def delete_workout(workout_id):
     db.commit()
     return jsonify({"success": True})
 
+@app.route("/api/workouts/push", methods=["POST", "OPTIONS"])
+def push_workout():
+    """External push endpoint for lift tracker — uses APP_SECRET as simple auth token."""
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True})
+
+    data = request.json or {}
+    token = data.get("token", "")
+    if token != app.config["APP_SECRET"]:
+        return jsonify({"error": "Invalid token"}), 403
+
+    log_text = data.get("log_text", "").strip()
+    if not log_text:
+        return jsonify({"error": "log_text is required"}), 400
+
+    workout_date = data.get("date", date.today().isoformat())
+    workout_type = data.get("workout_type", "lift")
+    notes = data.get("notes", "Pushed from PhysioIQ Lift Tracker")
+
+    db = get_db()
+    # Find the first user (single-user app)
+    user = db.execute("SELECT id FROM users LIMIT 1").fetchone()
+    if not user:
+        return jsonify({"error": "No user found"}), 404
+
+    db.execute("""
+        INSERT INTO workout_logs (user_id, date, workout_type, log_text, notes)
+        VALUES (?, ?, ?, ?, ?)
+    """, (user["id"], workout_date, workout_type, log_text, notes))
+    db.commit()
+
+    logger.info("Workout pushed from lift tracker: type=%s, date=%s, length=%d", workout_type, workout_date, len(log_text))
+    return jsonify({"success": True, "message": "Lift log saved to PhysioIQ"}), 201
+
 # --- Garmin ---
 
 @app.route("/api/garmin/pull", methods=["POST"])
@@ -1450,12 +1524,54 @@ def garmin_data():
 
 # --- Reports ---
 
+def _background_generate_report(app_obj, user_id, report_type, report_id):
+    """Run report generation in a background thread with its own app context."""
+    with app_obj.app_context():
+        generate_report(user_id, report_type, report_id=report_id)
+
 @app.route("/api/reports/generate", methods=["POST"])
 @require_auth
 def generate_report_endpoint():
     data = request.json or {}
     report_type = data.get("type", "morning")
-    result = generate_report(g.user_id, report_type)
+    user_id = g.user_id
+    today = date.today().isoformat()
+
+    # Create a placeholder report row with status='generating'
+    db = get_db()
+    db.execute("""
+        INSERT INTO reports (user_id, date, report_type, html_content, metrics_json, status)
+        VALUES (?, ?, ?, '', '', 'generating')
+    """, (user_id, today, report_type))
+    db.commit()
+    report_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    # Start background thread to generate the report
+    thread = threading.Thread(
+        target=_background_generate_report,
+        args=(app._get_current_object(), user_id, report_type, report_id),
+        daemon=True
+    )
+    thread.start()
+
+    # Return immediately — frontend will poll for completion
+    return jsonify({"success": True, "report_id": report_id, "status": "generating"})
+
+@app.route("/api/reports/<int:report_id>/status", methods=["GET"])
+@require_auth
+def report_status(report_id):
+    db = get_db()
+    report = db.execute(
+        "SELECT id, status, html_content FROM reports WHERE id = ? AND user_id = ?",
+        (report_id, g.user_id)
+    ).fetchone()
+    if not report:
+        return jsonify({"error": "Report not found"}), 404
+    result = {"report_id": report["id"], "status": report["status"]}
+    if report["status"] == "complete":
+        result["html"] = report["html_content"]
+    elif report["status"] == "error":
+        result["error"] = report["html_content"]
     return jsonify(result)
 
 @app.route("/api/reports", methods=["GET"])
@@ -1464,7 +1580,7 @@ def get_reports():
     target_date = request.args.get("date", date.today().isoformat())
     db = get_db()
     reports = db.execute(
-        "SELECT id, date, report_type, created_at FROM reports WHERE user_id = ? AND date = ? ORDER BY created_at DESC",
+        "SELECT id, date, report_type, status, created_at FROM reports WHERE user_id = ? AND date = ? ORDER BY created_at DESC",
         (g.user_id, target_date)
     ).fetchall()
     return jsonify([dict(r) for r in reports])
