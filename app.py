@@ -416,6 +416,8 @@ def pull_garmin_data(user_id, target_date=None, force=False):
             logger.info("Attempting Garmin password login for %s ...", email)
             try:
                 garmin.login()
+                garmin.display_name = garmin.get_full_name()
+                logger.info("Garmin login successful (user: %s)", garmin.display_name)
             except Exception as login_err:
                 err_str = str(login_err)
                 if "429" in err_str or "too many" in err_str.lower() or "rate" in err_str.lower():
