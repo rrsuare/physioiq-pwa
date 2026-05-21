@@ -680,9 +680,25 @@ def pull_garmin_data(user_id, target_date=None, force=False):
         weight_lb = None
         try:
             weight_data = garmin.get_body_composition(target)
-            if weight_data and weight_data.get("weight"):
-                weight_lb = round(weight_data["weight"] / 1000 * 2.20462, 1)
-                logger.info("Garmin weight from body_composition: %s lb", weight_lb)
+            logger.info("Garmin body_composition keys: %s", list(weight_data.keys()) if weight_data and isinstance(weight_data, dict) else type(weight_data))
+            if weight_data:
+                # Try top-level weight first
+                raw_wt = weight_data.get("weight")
+                # Try dateWeightList (common Garmin API structure)
+                if not raw_wt and weight_data.get("dateWeightList"):
+                    wt_list = weight_data["dateWeightList"]
+                    if wt_list and len(wt_list) > 0:
+                        raw_wt = wt_list[-1].get("weight")  # most recent entry
+                        logger.info("Garmin weight from dateWeightList: raw=%s", raw_wt)
+                # Try totalAverage
+                if not raw_wt and weight_data.get("totalAverage"):
+                    raw_wt = weight_data["totalAverage"].get("weight")
+                    logger.info("Garmin weight from totalAverage: raw=%s", raw_wt)
+                if raw_wt and raw_wt > 0:
+                    weight_lb = round(raw_wt / 1000 * 2.20462, 1)
+                    logger.info("Garmin weight: %s lb (raw grams: %s)", weight_lb, raw_wt)
+                else:
+                    logger.info("Garmin body_composition returned but no weight value found")
         except Exception as e:
             logger.warning("Garmin weight fetch failed: %s", str(e))
 
@@ -690,7 +706,6 @@ def pull_garmin_data(user_id, target_date=None, force=False):
         if weight_lb is None and stats:
             stats_weight = stats.get("weight")
             if stats_weight and stats_weight > 0:
-                # Stats weight is typically in grams
                 weight_lb = round(stats_weight / 1000 * 2.20462, 1)
                 logger.info("Garmin weight from stats fallback: %s lb (raw grams: %s)", weight_lb, stats_weight)
 
