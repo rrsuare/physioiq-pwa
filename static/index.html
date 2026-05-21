@@ -260,20 +260,34 @@ body { font-family: -apple-system, 'Inter', 'SF Pro', sans-serif; background: va
 
 <script>
 // ---------------------------------------------------------------------------
+// Kill stale service workers (fixes Safari "string did not match" error)
+// ---------------------------------------------------------------------------
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(function(registrations) {
+    registrations.forEach(function(reg) { reg.unregister(); });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 let TOKEN = localStorage.getItem('physioiq_token') || '';
 let editingMealId = null;
 
-const API = ''; // same origin
+const API = location.origin; // full origin URL for Safari compatibility
 
 function headers() {
   return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN };
 }
 
-async function api(path, opts = {}) {
-  const res = await fetch(API + path, { headers: headers(), ...opts });
-  const data = await res.json();
+async function api(path, opts) {
+  opts = opts || {};
+  var fetchOpts = { headers: headers() };
+  if (opts.method) fetchOpts.method = opts.method;
+  if (opts.body) fetchOpts.body = opts.body;
+  var url = API + path;
+  var res = await fetch(url, fetchOpts);
+  var data = await res.json();
   if (res.status === 401) { TOKEN = ''; localStorage.removeItem('physioiq_token'); showOnboarding(); }
   return data;
 }
