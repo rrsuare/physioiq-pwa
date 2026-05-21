@@ -415,6 +415,44 @@ def build_context(user_id, include_today=True):
                     for k, v in interesting_extras.items():
                         context_parts.append(f"    {k}: {v}")
 
+                # ACTIVITIES (swim, run, lift, etc.) from Garmin
+                activities = raw.get("activities", [])
+                if activities:
+                    context_parts.append(f"\n  GARMIN ACTIVITIES TODAY ({len(activities)} found):")
+                    for i, act in enumerate(activities, 1):
+                        context_parts.append(f"\n    ACTIVITY {i}: {act.get('name', 'Unknown')}")
+                        context_parts.append(f"      Type: {act.get('type', 'unknown')}")
+                        context_parts.append(f"      Start: {act.get('start', 'unknown')}")
+                        context_parts.append(f"      Duration: {act.get('duration_min', 0)} min ({act.get('duration_sec', 0)} sec)")
+                        if act.get('distance_m'):
+                            context_parts.append(f"      Distance: {act.get('distance_m', 0):.0f} m / {act.get('distance_yards', 0):.0f} yards / {act.get('distance_miles', 0):.2f} miles")
+                        context_parts.append(f"      Calories: {act.get('calories', 0)}")
+                        context_parts.append(f"      Avg HR: {act.get('avg_hr', 0)} | Max HR: {act.get('max_hr', 0)}")
+                        if act.get('training_effect_aerobic'):
+                            context_parts.append(f"      TE Aerobic: {act.get('training_effect_aerobic', 0)} | TE Anaerobic: {act.get('training_effect_anaerobic', 0)}")
+                        if act.get('laps'):
+                            context_parts.append(f"      Laps: {act.get('laps', 0)}")
+                        if act.get('pool_length'):
+                            context_parts.append(f"      Pool Length: {act.get('pool_length', 0)} m")
+                        if act.get('strokes'):
+                            context_parts.append(f"      Strokes: {act.get('strokes', 0)}")
+                        if act.get('avg_stroke_distance'):
+                            context_parts.append(f"      Avg Stroke Distance: {act.get('avg_stroke_distance', 0):.2f} m")
+                        if act.get('swim_SWOLF'):
+                            context_parts.append(f"      Avg SWOLF: {act.get('swim_SWOLF', 0)}")
+                        if act.get('avg_speed'):
+                            # Convert m/s to pace per 100m for swimming
+                            spd = act.get('avg_speed', 0)
+                            if spd and spd > 0 and 'swim' in act.get('type', '').lower():
+                                pace_sec_per_100 = 100 / spd
+                                pace_min = int(pace_sec_per_100 // 60)
+                                pace_s = int(pace_sec_per_100 % 60)
+                                context_parts.append(f"      Pace: {pace_min}:{pace_s:02d} per 100m")
+                            elif spd and spd > 0:
+                                context_parts.append(f"      Avg Speed: {spd:.2f} m/s")
+                else:
+                    context_parts.append(f"\n  GARMIN ACTIVITIES TODAY: None recorded")
+
         # Yesterday for comparison
         yesterday = (date.today() - timedelta(days=1)).isoformat()
         garmin_y = db.execute(
@@ -802,7 +840,48 @@ def pull_garmin_data(user_id, target_date=None, force=False):
         logger.info("Garmin metrics — RHR:%s BB:%s stress:%s steps:%s cal:%s",
                      resting_hr, body_battery, stress_avg, steps, cal_total)
 
-        # Store in database — include full sleep data in raw_json
+        # Fetch ACTIVITIES (swim, run, lift, etc.) for the target date
+        activities = []
+        try:
+            acts_raw = garmin.get_activities_by_date(target, target)
+            if acts_raw:
+                for act in acts_raw:
+                    a = {
+                        "name": act.get("activityName", ""),
+                        "type": act.get("activityType", {}).get("typeKey", ""),
+                        "sport": act.get("sportTypeId", ""),
+                        "start": act.get("startTimeLocal", ""),
+                        "duration_sec": act.get("duration", 0),
+                        "distance_m": act.get("distance", 0),
+                        "calories": act.get("calories", 0),
+                        "avg_hr": act.get("averageHR", 0),
+                        "max_hr": act.get("maxHR", 0),
+                        "avg_speed": act.get("averageSpeed", 0),
+                        "training_effect_aerobic": act.get("aerobicTrainingEffect", 0),
+                        "training_effect_anaerobic": act.get("anaerobicTrainingEffect", 0),
+                        "laps": act.get("lapCount", 0),
+                        "steps": act.get("steps", 0),
+                        "strokes": act.get("strokes", 0),
+                        "avg_stroke_distance": act.get("avgStrokeDistance", 0),
+                        "pool_length": act.get("poolLength", 0),
+                        "swim_SWOLF": act.get("averageSwolf", 0),
+                        "elevationGain": act.get("elevationGain", 0),
+                        "vo2max": act.get("vO2MaxValue", 0),
+                    }
+                    # Duration in minutes
+                    a["duration_min"] = round(a["duration_sec"] / 60, 1) if a["duration_sec"] else 0
+                    # Distance in yards (for swimming) or miles
+                    if a["distance_m"]:
+                        a["distance_yards"] = round(a["distance_m"] * 1.09361, 0)
+                        a["distance_miles"] = round(a["distance_m"] / 1609.34, 2)
+                    activities.append(a)
+                logger.info("Garmin activities found: %d — types: %s", len(activities), [a["type"] for a in activities])
+            else:
+                logger.info("No Garmin activities found for %s", target)
+        except Exception as e:
+            logger.warning("Garmin activities fetch failed: %s", str(e))
+
+        # Store in database — include full sleep data AND activities in raw_json
         db = get_db()
         db.execute("""
             INSERT OR REPLACE INTO garmin_data
@@ -811,7 +890,7 @@ def pull_garmin_data(user_id, target_date=None, force=False):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (user_id, target, weight_lb, sleep_score, hrv, resting_hr, body_battery,
               stress_avg, steps, active_min, cal_total,
-              json.dumps({"stats": stats, "sleep": sleep, "sleep_score": sleep_score, "hrv_raw": hrv_data})))
+              json.dumps({"stats": stats, "sleep": sleep, "sleep_score": sleep_score, "hrv_raw": hrv_data, "activities": activities})))
         db.commit()
 
         logger.info("Garmin data stored successfully for %s", target)
@@ -867,13 +946,29 @@ def generate_report(user_id, report_type="morning", report_id=None):
         (user_id, today)
     ).fetchone()["cnt"] > 0
 
-    data_note = ""
-    if not has_garmin and not has_meals:
-        data_note = "\n\nNOTE: No Garmin data or meals have been logged for today yet. Generate the report using any available historical data, the user's profile, and general coaching guidance. For sections that require today's data, note that data is pending and provide placeholder guidance based on the user's goals and typical patterns."
-    elif not has_garmin:
-        data_note = "\n\nNOTE: No Garmin data is available for today (device may not have synced yet). Use available meal data and any historical patterns. For Garmin-dependent sections (sleep, HRV, body battery, etc.), note that data is pending."
-    elif not has_meals:
-        data_note = "\n\nNOTE: No meals have been logged for today yet. Use available Garmin data and provide nutrition guidance based on the user's targets."
+    has_workouts = db.execute(
+        "SELECT COUNT(*) as cnt FROM workout_logs WHERE user_id = ? AND date = ?",
+        (user_id, today)
+    ).fetchone()["cnt"] > 0
+
+    data_notes = []
+    data_notes.append("""
+ABSOLUTE RULE — DO NOT FABRICATE DATA:
+You MUST ONLY use data explicitly provided in the CURRENT DATA section above. If a data point is not present, say "No data available" or "Not logged". NEVER invent, estimate, or hallucinate:
+- Exercise names, sets, reps, or weights (unless they appear in WORKOUT LOGS above)
+- Meal items, calories, or macros (unless they appear in TODAY'S MEALS above)
+- Swim distances, times, or HR data (unless they appear in GARMIN ACTIVITIES above)
+- Specific numerical values for any metric not in the data
+If there are no meals logged, show the meal table as empty with zeros. If there's no swim activity, say "No swim recorded in Garmin." If there's no lift log, say "No workout log submitted." Do NOT fill in plausible-looking fake data.""")
+
+    if not has_garmin:
+        data_notes.append("DATA STATUS — GARMIN: No Garmin data available for today. Do not fabricate HRV, RHR, sleep, weight, or activity values.")
+    if not has_meals:
+        data_notes.append("DATA STATUS — MEALS: No meals logged today. Show meal table as empty with all zeros. Do not invent meal items.")
+    if not has_workouts:
+        data_notes.append("DATA STATUS — WORKOUT LOG: No workout/lift log submitted today. Do not fabricate exercises, sets, reps, or weights. If Garmin shows an activity (like swimming), use that data. But do NOT invent lift details.")
+
+    data_note = "\n\n".join(data_notes)
 
     html_style_instructions = """
 
