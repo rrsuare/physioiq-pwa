@@ -134,10 +134,21 @@ def init_db():
             UNIQUE(user_id, date)
         );
 
+        CREATE TABLE IF NOT EXISTS workout_logs (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            date TEXT NOT NULL,
+            workout_type TEXT NOT NULL,  -- swim, lift, both
+            log_text TEXT NOT NULL,
+            notes TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
         CREATE INDEX IF NOT EXISTS idx_garmin_date ON garmin_data(user_id, date);
         CREATE INDEX IF NOT EXISTS idx_meals_date ON meals(user_id, date);
         CREATE INDEX IF NOT EXISTS idx_reports_date ON reports(user_id, date, report_type);
         CREATE INDEX IF NOT EXISTS idx_chat_date ON chat_messages(user_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_workout_date ON workout_logs(user_id, date);
     """)
     db.commit()
 
@@ -456,6 +467,19 @@ def build_context(user_id, include_today=True):
                 total_f += m["fat_g"] or 0
         context_parts.append(f"  TOTALS SO FAR: {total_cal} cal | P: {total_p:.0f}g | C: {total_c:.0f}g | F: {total_f:.0f}g")
 
+    # Today's workout logs (lift data, swim notes, etc.)
+    workouts = db.execute(
+        "SELECT * FROM workout_logs WHERE user_id = ? AND date = ? ORDER BY created_at",
+        (user_id, today)
+    ).fetchall()
+    if workouts:
+        context_parts.append(f"\nTODAY'S WORKOUT LOGS:")
+        for w in workouts:
+            context_parts.append(f"  [{w['workout_type'].upper()}] Logged at {w['created_at']}:")
+            context_parts.append(f"  {w['log_text']}")
+            if w['notes']:
+                context_parts.append(f"  Notes: {w['notes']}")
+
     # Recent daily state
     state = db.execute(
         "SELECT state_json FROM daily_state WHERE user_id = ? AND date = ?",
@@ -490,6 +514,24 @@ def chat_with_claude(user_id, user_message):
                 logger.warning("Garmin auto-pull in chat failed: %s", result["error"])
         except Exception as e:
             logger.error("Garmin auto-pull in chat exception: %s", str(e))
+
+    # Auto-detect and save lift/workout logs from chat messages
+    msg_lower = user_message.lower()
+    if ("lift log" in msg_lower or "physioiq lift" in msg_lower or
+        ("set " in msg_lower and "reps" in msg_lower) or
+        ("×" in user_message and "reps" in msg_lower)):
+        workout_type = "lift"
+        if "swim" in msg_lower:
+            workout_type = "both"
+        try:
+            db.execute("""
+                INSERT INTO workout_logs (user_id, date, workout_type, log_text, notes)
+                VALUES (?, ?, ?, ?, ?)
+            """, (user_id, today, workout_type, user_message, "Auto-detected from chat"))
+            db.commit()
+            logger.info("Auto-saved workout log from chat: type=%s, length=%d", workout_type, len(user_message))
+        except Exception as e:
+            logger.warning("Failed to auto-save workout log: %s", str(e))
 
     # Build system prompt
     system_prompt = user["system_prompt"] or "You are PhysioIQ, a personal body performance coach and nutrition trainer."
@@ -959,16 +1001,24 @@ IMPORTANT: The morning report must NOT include workout intensity details, swim y
 
         "post_workout": f"""Generate Ruben's PhysioIQ Post-Workout Report. Include rich contextual commentary.
 
+CONTEXT: The data section above includes:
+- Garmin data (which captures swim activity — duration, HR, calories, training effect, laps if available)
+- Workout logs (lift data with exercises, sets, reps, weights — submitted by the user)
+- Meals logged so far today
+
+Use ALL available data to build a comprehensive post-workout report. The swim data comes from Garmin; the lift data comes from the workout log.
+
 REQUIRED SECTIONS:
-1. HEADER — Post-workout report title with timestamp
-2. WORKOUT SUMMARY — What was done, duration, intensity, how it compared to plan (use green header)
-3. RECOVERY STATUS — Body battery drain, HR recovery, stress response, comparison to typical (use teal header)
-4. CALORIC IMPACT — Calories burned estimate with calculation, updated net balance (use orange header)
-5. RECOVERY NUTRITION — SPECIFIC foods to eat NOW for recovery with macro targets (use blue header)
-6. REMAINING DAILY TARGETS — Updated macro/calorie targets accounting for workout burn and meals so far (use yellow header)
-7. HYDRATION RECOVERY — Fluid replacement needs with specific amounts (use teal header)
-8. NEXT SESSION PREVIEW — When to train next, what to focus on based on today's performance (use purple header)
-9. COACH'S NOTE — Performance observations, what went well, any adjustments needed (use green header)
+1. HEADER — Post-workout report title with timestamp and workout type (e.g., "SSL Swim + Lower/Bicep/Core Lift")
+2. SWIM SUMMARY — Pull from Garmin activity data: duration, distance, avg HR, max HR, training effect, pace, laps. Compare to targets. Rate performance. (use blue header)
+3. LIFT SUMMARY — Pull from workout log: exercises performed, total volume (sets × reps × weight), highlight PRs or notable effort. Note any extras the user added (e.g., additional calf sets). (use green header)
+4. COMBINED WORKOUT ANALYSIS — Total training time, estimated calories burned (swim + lift + sauna), training load assessment, how body handled the double session. (use purple header)
+5. RECOVERY STATUS — Body battery drain, HR recovery, stress response, comparison to typical (use teal header)
+6. CALORIC IMPACT — Full energy calculation: swim burn (from Garmin or MET estimate) + lift burn (estimate from volume) + sauna burn. Updated TDEE and net balance. (use orange header)
+7. RECOVERY NUTRITION — SPECIFIC foods to eat NOW for recovery with macro targets. Account for what's already been eaten today. (use blue header)
+8. REMAINING DAILY TARGETS — Updated macro/calorie targets accounting for workout burn and meals so far. Show what's left to hit targets. (use yellow header)
+9. HYDRATION RECOVERY — Fluid replacement needs with specific amounts (use teal header)
+10. COACH'S NOTE — Performance observations across both workouts, what went well, form notes, any adjustments for next session. Reference specific exercises and numbers from the lift log. (use green header)
 
 {html_style_instructions}{data_note}""",
 
@@ -1231,6 +1281,51 @@ def update_meal(meal_id):
 def delete_meal(meal_id):
     db = get_db()
     db.execute("DELETE FROM meals WHERE id = ? AND user_id = ?", (meal_id, g.user_id))
+    db.commit()
+    return jsonify({"success": True})
+
+# --- Workout Logs ---
+
+@app.route("/api/workouts", methods=["GET"])
+@require_auth
+def get_workouts():
+    db = get_db()
+    target_date = request.args.get("date", date.today().isoformat())
+    workouts = db.execute(
+        "SELECT * FROM workout_logs WHERE user_id = ? AND date = ? ORDER BY created_at",
+        (g.user_id, target_date)
+    ).fetchall()
+    return jsonify([dict(w) for w in workouts])
+
+@app.route("/api/workouts", methods=["POST"])
+@require_auth
+def add_workout():
+    data = request.json or {}
+    log_text = data.get("log_text", "").strip()
+    if not log_text:
+        return jsonify({"error": "log_text is required"}), 400
+
+    workout_date = data.get("date", date.today().isoformat())
+    workout_type = data.get("workout_type", "lift")  # swim, lift, both
+    notes = data.get("notes", "")
+
+    db = get_db()
+    db.execute("""
+        INSERT INTO workout_logs (user_id, date, workout_type, log_text, notes)
+        VALUES (?, ?, ?, ?, ?)
+    """, (g.user_id, workout_date, workout_type, log_text, notes))
+    db.commit()
+
+    wid = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    workout = db.execute("SELECT * FROM workout_logs WHERE id = ?", (wid,)).fetchone()
+    logger.info("Workout logged: type=%s, date=%s, length=%d chars", workout_type, workout_date, len(log_text))
+    return jsonify(dict(workout)), 201
+
+@app.route("/api/workouts/<int:workout_id>", methods=["DELETE"])
+@require_auth
+def delete_workout(workout_id):
+    db = get_db()
+    db.execute("DELETE FROM workout_logs WHERE id = ? AND user_id = ?", (workout_id, g.user_id))
     db.commit()
     return jsonify({"success": True})
 
