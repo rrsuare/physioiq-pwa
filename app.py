@@ -65,7 +65,7 @@ def add_cors_headers(response):
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(app.config["DATABASE"])
+        g.db = sqlite3.connect(app.config["DATABASE"], check_same_thread=False)
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA journal_mode=WAL")
         g.db.execute("PRAGMA foreign_keys=ON")
@@ -73,7 +73,7 @@ def get_db():
 
 def get_standalone_db():
     """Get a DB connection outside of Flask request context (for background threads)."""
-    db = sqlite3.connect(app.config["DATABASE"])
+    db = sqlite3.connect(app.config["DATABASE"], check_same_thread=False)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA foreign_keys=ON")
@@ -1526,8 +1526,28 @@ def garmin_data():
 
 def _background_generate_report(app_obj, user_id, report_type, report_id):
     """Run report generation in a background thread with its own app context."""
-    with app_obj.app_context():
-        generate_report(user_id, report_type, report_id=report_id)
+    logger.info("Background thread started for report %s (type=%s, user=%s)", report_id, report_type, user_id)
+    try:
+        with app_obj.app_context():
+            result = generate_report(user_id, report_type, report_id=report_id)
+            if result.get("error"):
+                logger.error("Background report %s failed: %s", report_id, result["error"])
+            else:
+                logger.info("Background report %s completed successfully", report_id)
+    except Exception as e:
+        logger.error("Background thread CRASHED for report %s: %s", report_id, str(e))
+        logger.error("Traceback: %s", traceback.format_exc())
+        # Emergency: update status directly with standalone DB
+        try:
+            db = get_standalone_db()
+            db.execute(
+                "UPDATE reports SET html_content = ?, status = 'error' WHERE id = ?",
+                (f"Background thread error: {str(e)}", report_id)
+            )
+            db.commit()
+            db.close()
+        except Exception as db_err:
+            logger.error("Failed to update report status after crash: %s", str(db_err))
 
 @app.route("/api/reports/generate", methods=["POST"])
 @require_auth
