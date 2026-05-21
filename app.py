@@ -380,10 +380,12 @@ def pull_garmin_data(user_id, target_date=None, force=False):
                     token_data = f.read()
                 logger.info("Found saved Garmin tokens, attempting token login...")
                 garmin.garth.loads(token_data)
-                # Validate the token by making a lightweight call
-                garmin.display_name = garmin.get_full_name()
+                # Set display_name from garth profile (same source as login())
+                garmin.display_name = garmin.garth.profile["displayName"]
+                # Validate the token works by making a lightweight call
+                full_name = garmin.get_full_name()
                 logged_in = True
-                logger.info("Garmin token login successful (user: %s)", garmin.display_name)
+                logger.info("Garmin token login successful (display_name: %s, full_name: %s)", garmin.display_name, full_name)
                 # Clear cooldown on successful token login
                 if os.path.exists(cooldown_file):
                     os.remove(cooldown_file)
@@ -427,8 +429,7 @@ def pull_garmin_data(user_id, target_date=None, force=False):
                     except Exception:
                         pass
                 raise login_err
-            garmin.display_name = garmin.get_full_name()
-            logger.info("Garmin password login successful (user: %s)", garmin.display_name)
+            logger.info("Garmin password login successful (display_name: %s)", garmin.display_name)
             # Save tokens for next time
             try:
                 with open(token_file, "w") as f:
@@ -448,8 +449,7 @@ def pull_garmin_data(user_id, target_date=None, force=False):
                     os.remove(token_file)
                 garmin = Garmin(email, password)
                 garmin.login()
-                garmin.display_name = garmin.get_full_name()
-                logger.info("Fresh login successful (user: %s), retrying get_stats", garmin.display_name)
+                logger.info("Fresh login successful (display_name: %s), retrying get_stats", garmin.display_name)
                 stats = garmin.get_stats(target)
                 # Save the fresh tokens
                 try:
