@@ -346,7 +346,7 @@ def pull_garmin_data(user_id, target_date=None, force=False):
         logger.error("Garmin credentials not configured (email=%s, password=%s)", bool(email), bool(password))
         return {"error": "Garmin credentials not configured"}
 
-    target = target_date or  date.today().isoformat()
+    target = target_date or date.today().isoformat()
 
     # --- Rate-limit cooldown: don't retry login within 15 minutes of a 429 failure ---
     token_dir = os.path.join(os.path.dirname(app.config["DATABASE"]), ".garmin_tokens")
@@ -384,7 +384,7 @@ def pull_garmin_data(user_id, target_date=None, force=False):
                 garmin.display_name = garmin.get_full_name()
                 logged_in = True
                 logger.info("Garmin token login successful (user: %s)", garmin.display_name)
-            # Clear cooldown on successful token login
+                # Clear cooldown on successful token login
                 if os.path.exists(cooldown_file):
                     os.remove(cooldown_file)
             except Exception as e:
@@ -416,8 +416,6 @@ def pull_garmin_data(user_id, target_date=None, force=False):
             logger.info("Attempting Garmin password login for %s ...", email)
             try:
                 garmin.login()
-                garmin.display_name = garmin.get_full_name()
-                logger.info("Garmin login successful (user: %s)", garmin.display_name)
             except Exception as login_err:
                 err_str = str(login_err)
                 if "429" in err_str or "too many" in err_str.lower() or "rate" in err_str.lower():
@@ -429,7 +427,8 @@ def pull_garmin_data(user_id, target_date=None, force=False):
                     except Exception:
                         pass
                 raise login_err
-            logger.info("Garmin password login successful!")
+            garmin.display_name = garmin.get_full_name()
+            logger.info("Garmin password login successful (user: %s)", garmin.display_name)
             # Save tokens for next time
             try:
                 with open(token_file, "w") as f:
@@ -438,9 +437,28 @@ def pull_garmin_data(user_id, target_date=None, force=False):
             except Exception as e:
                 logger.warning("Could not save Garmin tokens: %s", str(e))
 
-        # Fetch data
+        # Fetch data (with 403 retry — stale tokens can cause Forbidden)
         logger.info("Fetching Garmin stats for %s ...", target)
-        stats = garmin.get_stats(target)
+        try:
+            stats = garmin.get_stats(target)
+        except Exception as stats_err:
+            if "403" in str(stats_err) or "Forbidden" in str(stats_err):
+                logger.warning("Garmin get_stats got 403 — deleting cached tokens and retrying with fresh login")
+                if os.path.exists(token_file):
+                    os.remove(token_file)
+                garmin = Garmin(email, password)
+                garmin.login()
+                garmin.display_name = garmin.get_full_name()
+                logger.info("Fresh login successful (user: %s), retrying get_stats", garmin.display_name)
+                stats = garmin.get_stats(target)
+                # Save the fresh tokens
+                try:
+                    with open(token_file, "w") as f:
+                        f.write(garmin.garth.dumps())
+                except Exception:
+                    pass
+            else:
+                raise stats_err
         logger.info("Garmin stats keys: %s", list(stats.keys()) if stats else "None")
 
         sleep = None
@@ -1062,7 +1080,7 @@ def export_garmin():
     end = request.args.get("end", date.today().isoformat())
     db = get_db()
     data = db.execute(
-        "SELECT * FROM garmin_data WHERe user_id = ? AND date >= ? AND date <= ? ORDER BY date",
+        "SELECT * FROM garmin_data WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date",
         (g.user_id, start, end)
     ).fetchall()
     return jsonify([dict(d) for d in data])
