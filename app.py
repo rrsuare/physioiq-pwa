@@ -1569,7 +1569,7 @@ def generate_report_endpoint():
     # Start background thread to generate the report
     thread = threading.Thread(
         target=_background_generate_report,
-        args=(app._get_current_object(), user_id, report_type, report_id),
+        args=(app, user_id, report_type, report_id),
         daemon=True
     )
     thread.start()
