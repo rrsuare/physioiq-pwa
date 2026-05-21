@@ -905,7 +905,7 @@ REQUIRED SECTIONS (in this order):
    - **CONTEXTUAL PARAGRAPH**: Interpret what this combination means. Is this supercompensation? Declining trend? Stable baseline? Connect HRV + RHR + stress into a narrative. Example: "HRV 68.2 is your highest reading in weeks. This is classic supercompensation — after the week of stress, once you got home your nervous system bounced way above baseline."
    - Give a clear CALL: "PUSH-leaning MODERATE. Hit the lift hard but don't add anything extra."
 
-3. **WEIGHT** — Current weight in KPI boxes (today's weight, target weight, delta vs last reading).
+3. **WEIGHT** — Current weight in KPI boxes (today's weight, target weight = 173 lb, delta vs last reading).
    - Weekly velocity if data available
    - Context: travel effects, glycogen status, trend direction
    - Commentary note about what to expect
@@ -916,20 +916,13 @@ REQUIRED SECTIONS (in this order):
    - Respiration rate
    - Contextual paragraph: what did the body prioritize? What's good? What's low and why?
 
-5. **WORKOUT INTENSITY** — Based on readiness assessment.
-   - Clear recommendation for each activity (swim yardage/HR/TE targets, lift protocol with specific exercises/sets/reps/weights if known)
-   - Sauna recommendation
-   - Any injury notes or tests to run
-
-6. **TODAY'S TIMELINE** — Chronological plan using timeline row style:
+5. **TODAY'S TIMELINE** — Chronological plan using timeline row style:
    - Pre-swim food + supplements + timing
-   - Swim details
    - Post-swim nutrition
-   - Lift session
    - Sauna
    - Evening supplements + sleep target
 
-7. **ENERGY BALANCE** — Full TDEE calculation in monospace calc style:
+6. **ENERGY BALANCE** — Full TDEE calculation in monospace calc style:
    - BMR line
    - NEAT + TEF line
    - Swim burn (show MET calculation)
@@ -940,23 +933,27 @@ REQUIRED SECTIONS (in this order):
    - Planned deficit
    - Context note
 
-8. **MACRO TARGETS** — Calories, protein floor, carbs, fat, sodium in data rows.
+7. **MACRO TARGETS** — Calories, protein floor, carbs, fat, sodium in data rows.
    - Context for each if relevant (e.g., "recover from yesterday's fat spike")
 
-9. **SUPPLEMENTS** — Full daily schedule with timing in data rows.
+8. **SUPPLEMENTS** — Full daily schedule with timing in data rows.
    - Note calcium citrate timing rules
    - Note if smoothie day affects schedule
 
-10. **MERCURY STATUS** — Weekly budget used / remaining, what's available, low-mercury options.
+9. **MERCURY STATUS** — Weekly budget used / remaining, what's available, low-mercury options.
+
+10. **PRE-WORKOUT NUTRITION** — SPECIFIC food + timing recommendations for before the swim. Example: "Banana + Applesauce + SaltStick 2 caps · 16 oz water + RE-LYTE" not "eat a light snack."
 
 11. **COACH'S NOTE** — This is the SUMMARY. Must cover:
     - Key finding from HRV/recovery
     - Sleep concern if any
-    - Clear workout intensity call with reasoning
+    - Readiness call with reasoning (PUSH/MODERATE/DIAL BACK)
     - One thing to watch for today
     - Motivational closer tied to data
 
 12. **FOOTER** — Single compact line: "PhysioIQ · Morning · DATE · Location · Wt VALUE · HRV VALUE · RHR VALUE · READINESS_CALL"
+
+IMPORTANT: The morning report must NOT include workout intensity details, swim yardage targets, HR zone targets, training effect targets, or exercise protocols. Those belong ONLY in the Post-Workout report. The morning report focuses on recovery metrics, readiness, nutrition, and supplements.
 
 {html_style_instructions}{data_note}""",
 
