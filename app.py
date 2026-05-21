@@ -185,7 +185,7 @@ def get_claude_client():
     return anthropic.Anthropic(api_key=key)
 
 def build_context(user_id, include_today=True):
-    """Build the context string with today's data for Claude."""
+    """Build rich context string with today's data for Claude, including deep Garmin metrics."""
     db = get_db()
 
     # User profile + system prompt
@@ -200,20 +200,184 @@ def build_context(user_id, include_today=True):
     context_parts.append(f"TODAY'S DATE: {datetime.now().strftime('%A, %B %d, %Y')}")
     context_parts.append(f"CURRENT TIME: {datetime.now().strftime('%I:%M %p')}")
 
-    # Today's Garmin data
+    # Today's Garmin data — extract RICH detail from raw_json
     if include_today:
         garmin = db.execute(
             "SELECT * FROM garmin_data WHERE user_id = ? AND date = ?",
             (user_id, today)
         ).fetchone()
         if garmin:
-            context_parts.append(f"TODAY'S GARMIN DATA ({today}):")
+            context_parts.append(f"\nTODAY'S GARMIN DATA ({today}):")
             context_parts.append(f"  Weight: {garmin['weight_lb']} lb")
             context_parts.append(f"  Sleep Score: {garmin['sleep_score']}")
             context_parts.append(f"  HRV: {garmin['hrv']}")
             context_parts.append(f"  Resting HR: {garmin['resting_hr']}")
             context_parts.append(f"  Body Battery: {garmin['body_battery']}")
+            context_parts.append(f"  Stress Avg: {garmin['stress_avg']}")
             context_parts.append(f"  Steps: {garmin['steps']}")
+            context_parts.append(f"  Active Minutes: {garmin['active_minutes']}")
+            context_parts.append(f"  Total Calories: {garmin['calories_total']}")
+
+            # Extract rich data from raw_json
+            raw = None
+            if garmin['raw_json']:
+                try:
+                    raw = json.loads(garmin['raw_json'])
+                except Exception:
+                    pass
+
+            if raw:
+                stats = raw.get("stats") or {}
+
+                # Sleep stages from sleep data
+                sleep_data = raw.get("sleep")
+                if sleep_data:
+                    daily_sleep = sleep_data.get("dailySleepDTO", {})
+                    context_parts.append(f"\n  SLEEP DETAIL:")
+                    sleep_start = daily_sleep.get("sleepStartTimestampLocal")
+                    sleep_end = daily_sleep.get("sleepEndTimestampLocal")
+                    if sleep_start and sleep_end:
+                        # Convert epoch millis to readable time
+                        try:
+                            start_dt = datetime.fromtimestamp(sleep_start / 1000)
+                            end_dt = datetime.fromtimestamp(sleep_end / 1000)
+                            context_parts.append(f"    Bed Time: {start_dt.strftime('%I:%M %p')}")
+                            context_parts.append(f"    Wake Time: {end_dt.strftime('%I:%M %p')}")
+                            duration_min = (sleep_end - sleep_start) / 60000
+                            hours = int(duration_min // 60)
+                            mins = int(duration_min % 60)
+                            context_parts.append(f"    Total Duration: {hours}h {mins}m")
+                        except Exception:
+                            pass
+
+                    deep_min = daily_sleep.get("deepSleepSeconds", 0) // 60 if daily_sleep.get("deepSleepSeconds") else 0
+                    light_min = daily_sleep.get("lightSleepSeconds", 0) // 60 if daily_sleep.get("lightSleepSeconds") else 0
+                    rem_min = daily_sleep.get("remSleepSeconds", 0) // 60 if daily_sleep.get("remSleepSeconds") else 0
+                    awake_min = daily_sleep.get("awakeSleepSeconds", 0) // 60 if daily_sleep.get("awakeSleepSeconds") else 0
+                    total_sleep_min = deep_min + light_min + rem_min + awake_min
+
+                    if total_sleep_min > 0:
+                        context_parts.append(f"    Deep Sleep: {deep_min} min ({deep_min*100//total_sleep_min}%)")
+                        context_parts.append(f"    Light Sleep: {light_min} min ({light_min*100//total_sleep_min}%)")
+                        context_parts.append(f"    REM Sleep: {rem_min} min ({rem_min*100//total_sleep_min}%)")
+                        context_parts.append(f"    Awake: {awake_min} min ({awake_min*100//total_sleep_min}%)")
+
+                    # Sleep scores breakdown
+                    sleep_scores = daily_sleep.get("sleepScores", {})
+                    if sleep_scores:
+                        for score_key in ["qualityOfSleep", "totalSleep", "stress", "remPercentage", "restlessness", "lightPercentage", "deepPercentage"]:
+                            score_val = sleep_scores.get(score_key, {})
+                            if isinstance(score_val, dict) and score_val.get("value") is not None:
+                                qual = score_val.get("qualifierKey", "")
+                                context_parts.append(f"    Sleep Score — {score_key}: {score_val['value']} ({qual})")
+
+                    # Respiration
+                    avg_resp = daily_sleep.get("averageRespiration")
+                    if avg_resp:
+                        context_parts.append(f"    Avg Respiration: {avg_resp} br/min")
+
+                # Stress detail from stats
+                context_parts.append(f"\n  STRESS DETAIL:")
+                stress_keys = {
+                    "averageStressLevel": "Average Stress",
+                    "maxStressLevel": "Max Stress",
+                    "stressDuration": "Stress Duration (sec)",
+                    "restStressDuration": "Rest Stress Duration (sec)",
+                    "lowStressDuration": "Low Stress Duration (sec)",
+                    "mediumStressDuration": "Medium Stress Duration (sec)",
+                    "highStressDuration": "High Stress Duration (sec)",
+                }
+                for key, label in stress_keys.items():
+                    val = stats.get(key)
+                    if val is not None:
+                        context_parts.append(f"    {label}: {val}")
+
+                # Body battery detail
+                context_parts.append(f"\n  BODY BATTERY DETAIL:")
+                bb_keys = {
+                    "bodyBatteryChargedValue": "Charged (High)",
+                    "bodyBatteryDrainedValue": "Drained (Low)",
+                    "bodyBatteryHighestValue": "Highest",
+                    "bodyBatteryLowestValue": "Lowest",
+                    "bodyBatteryMostRecentValue": "Most Recent",
+                }
+                for key, label in bb_keys.items():
+                    val = stats.get(key)
+                    if val is not None:
+                        context_parts.append(f"    {label}: {val}")
+
+                # Activity/fitness stats
+                context_parts.append(f"\n  ACTIVITY DETAIL:")
+                activity_keys = {
+                    "totalSteps": "Total Steps",
+                    "dailyStepGoal": "Step Goal",
+                    "totalDistanceMeters": "Distance (meters)",
+                    "activeSeconds": "Active Seconds",
+                    "sedentarySeconds": "Sedentary Seconds",
+                    "highlyActiveSeconds": "Highly Active Seconds",
+                    "moderateIntensityMinutes": "Moderate Intensity Minutes",
+                    "vigorousIntensityMinutes": "Vigorous Intensity Minutes",
+                    "intensityMinutesGoal": "Intensity Minutes Goal",
+                    "floorsAscended": "Floors Ascended",
+                    "floorsDescended": "Floors Descended",
+                    "floorsAscendedGoal": "Floors Goal",
+                    "totalKilocalories": "Total Calories",
+                    "activeKilocalories": "Active Calories",
+                    "bmrKilocalories": "BMR Calories",
+                    "wellnessKilocalories": "Wellness Calories",
+                    "burnedKilocalories": "Burned Calories",
+                    "consumedKilocalories": "Consumed Calories",
+                    "remainingKilocalories": "Remaining Calories",
+                    "netCalorieGoal": "Net Calorie Goal",
+                    "netRemainingKilocalories": "Net Remaining Calories",
+                }
+                for key, label in activity_keys.items():
+                    val = stats.get(key)
+                    if val is not None:
+                        context_parts.append(f"    {label}: {val}")
+
+                # Heart rate detail
+                context_parts.append(f"\n  HEART RATE DETAIL:")
+                hr_keys = {
+                    "restingHeartRate": "Resting HR",
+                    "minHeartRate": "Min HR",
+                    "maxHeartRate": "Max HR",
+                    "averageHeartRate": "Average HR",
+                    "minAvgHeartRate": "Min Avg HR",
+                    "maxAvgHeartRate": "Max Avg HR",
+                }
+                for key, label in hr_keys.items():
+                    val = stats.get(key)
+                    if val is not None:
+                        context_parts.append(f"    {label}: {val}")
+
+                # HRV detail from raw
+                hrv_raw = raw.get("hrv_raw")
+                if hrv_raw:
+                    hrv_summary = hrv_raw.get("hrvSummary", {})
+                    if hrv_summary:
+                        context_parts.append(f"\n  HRV DETAIL:")
+                        for hkey in ["lastNightAvg", "lastNight5MinHigh", "status", "baseline", "weeklyAvg", "lastNightAvg"]:
+                            hval = hrv_summary.get(hkey)
+                            if hval is not None:
+                                context_parts.append(f"    {hkey}: {hval}")
+                        # baseline sub-object
+                        baseline = hrv_summary.get("baseline")
+                        if isinstance(baseline, dict):
+                            context_parts.append(f"    Baseline Low: {baseline.get('lowUpper')}")
+                            context_parts.append(f"    Baseline Balanced Low: {baseline.get('balancedLow')}")
+                            context_parts.append(f"    Baseline Balanced Upper: {baseline.get('balancedUpper')}")
+
+                # Any other interesting stats keys not covered above
+                covered_keys = set(list(stress_keys.keys()) + list(bb_keys.keys()) + list(activity_keys.keys()) + list(hr_keys.keys()))
+                interesting_extras = {}
+                for k, v in stats.items():
+                    if k not in covered_keys and v is not None and v != 0 and not isinstance(v, (dict, list)):
+                        interesting_extras[k] = v
+                if interesting_extras:
+                    context_parts.append(f"\n  OTHER STATS:")
+                    for k, v in interesting_extras.items():
+                        context_parts.append(f"    {k}: {v}")
 
         # Yesterday for comparison
         yesterday = (date.today() - timedelta(days=1)).isoformat()
@@ -226,16 +390,50 @@ def build_context(user_id, include_today=True):
             context_parts.append(f"  Weight: {garmin_y['weight_lb']} lb")
             context_parts.append(f"  Sleep Score: {garmin_y['sleep_score']}")
             context_parts.append(f"  HRV: {garmin_y['hrv']}")
+            context_parts.append(f"  Resting HR: {garmin_y['resting_hr']}")
+            context_parts.append(f"  Body Battery: {garmin_y['body_battery']}")
+            context_parts.append(f"  Stress Avg: {garmin_y['stress_avg']}")
+            context_parts.append(f"  Steps: {garmin_y['steps']}")
 
-        # 7-day HRV average
+        # Day before yesterday for 3-day trend
+        day_before = (date.today() - timedelta(days=2)).isoformat()
+        garmin_db = db.execute(
+            "SELECT * FROM garmin_data WHERE user_id = ? AND date = ?",
+            (user_id, day_before)
+        ).fetchone()
+        if garmin_db:
+            context_parts.append(f"\n2 DAYS AGO GARMIN DATA ({day_before}):")
+            context_parts.append(f"  Weight: {garmin_db['weight_lb']} lb")
+            context_parts.append(f"  HRV: {garmin_db['hrv']}")
+            context_parts.append(f"  Resting HR: {garmin_db['resting_hr']}")
+
+        # 7-day averages and trends
         week_ago = (date.today() - timedelta(days=7)).isoformat()
-        hrv_rows = db.execute(
-            "SELECT hrv FROM garmin_data WHERE user_id = ? AND date >= ? AND hrv IS NOT NULL",
+        week_rows = db.execute(
+            "SELECT date, hrv, resting_hr, weight_lb, sleep_score, body_battery, stress_avg FROM garmin_data WHERE user_id = ? AND date >= ? ORDER BY date",
             (user_id, week_ago)
         ).fetchall()
-        if hrv_rows:
-            avg_hrv = sum(r["hrv"] for r in hrv_rows) / len(hrv_rows)
-            context_parts.append(f"\n7-DAY HRV AVERAGE: {avg_hrv:.0f}")
+        if week_rows:
+            context_parts.append(f"\n7-DAY HISTORY (for trend analysis):")
+            hrv_vals = [r["hrv"] for r in week_rows if r["hrv"] is not None]
+            rhr_vals = [r["resting_hr"] for r in week_rows if r["resting_hr"] is not None]
+            wt_vals = [r["weight_lb"] for r in week_rows if r["weight_lb"] is not None]
+            sleep_vals = [r["sleep_score"] for r in week_rows if r["sleep_score"] is not None]
+
+            if hrv_vals:
+                context_parts.append(f"  HRV 7-day avg: {sum(hrv_vals)/len(hrv_vals):.1f} | min: {min(hrv_vals)} | max: {max(hrv_vals)} | count: {len(hrv_vals)}")
+            if rhr_vals:
+                context_parts.append(f"  RHR 7-day avg: {sum(rhr_vals)/len(rhr_vals):.1f} | min: {min(rhr_vals)} | max: {max(rhr_vals)}")
+            if wt_vals:
+                context_parts.append(f"  Weight 7-day avg: {sum(wt_vals)/len(wt_vals):.1f} | min: {min(wt_vals)} | max: {max(wt_vals)}")
+                if len(wt_vals) >= 2:
+                    weekly_delta = wt_vals[-1] - wt_vals[0]
+                    context_parts.append(f"  Weight weekly delta: {weekly_delta:+.1f} lb")
+            if sleep_vals:
+                context_parts.append(f"  Sleep Score 7-day avg: {sum(sleep_vals)/len(sleep_vals):.1f}")
+
+            # Day-by-day for trend visualization
+            context_parts.append(f"  Day-by-day: {', '.join(f'{r[\"date\"]}:HRV={r[\"hrv\"]}/RHR={r[\"resting_hr\"]}/Wt={r[\"weight_lb\"]}' for r in week_rows)}")
 
     # Today's meals
     meals = db.execute(
@@ -481,9 +679,17 @@ def pull_garmin_data(user_id, target_date=None, force=False):
             weight_data = garmin.get_body_composition(target)
             if weight_data and weight_data.get("weight"):
                 weight_lb = round(weight_data["weight"] / 1000 * 2.20462, 1)
-                logger.info("Garmin weight: %s lb", weight_lb)
+                logger.info("Garmin weight from body_composition: %s lb", weight_lb)
         except Exception as e:
             logger.warning("Garmin weight fetch failed: %s", str(e))
+
+        # Fallback: try to extract weight from stats if body_composition failed
+        if weight_lb is None and stats:
+            stats_weight = stats.get("weight")
+            if stats_weight and stats_weight > 0:
+                # Stats weight is typically in grams
+                weight_lb = round(stats_weight / 1000 * 2.20462, 1)
+                logger.info("Garmin weight from stats fallback: %s lb (raw grams: %s)", weight_lb, stats_weight)
 
         sleep_score = None
         if sleep:
@@ -511,7 +717,7 @@ def pull_garmin_data(user_id, target_date=None, force=False):
         logger.info("Garmin metrics — RHR:%s BB:%s stress:%s steps:%s cal:%s",
                      resting_hr, body_battery, stress_avg, steps, cal_total)
 
-        # Store in database
+        # Store in database — include full sleep data in raw_json
         db = get_db()
         db.execute("""
             INSERT OR REPLACE INTO garmin_data
@@ -520,7 +726,7 @@ def pull_garmin_data(user_id, target_date=None, force=False):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (user_id, target, weight_lb, sleep_score, hrv, resting_hr, body_battery,
               stress_avg, steps, active_min, cal_total,
-              json.dumps({"stats": stats, "sleep_score": sleep_score, "hrv_raw": hrv_data})))
+              json.dumps({"stats": stats, "sleep": sleep, "sleep_score": sleep_score, "hrv_raw": hrv_data})))
         db.commit()
 
         logger.info("Garmin data stored successfully for %s", target)
@@ -594,7 +800,7 @@ STYLING RULES — follow these exactly:
 - Max-width: 393px; margin: 0 auto on the wrapper
 - Color palette: green=#30d158, yellow=#ffd60a, orange=#ff9f0a, blue=#0a84ff, red=#ff453a, teal=#64d2ff, purple=#bf5af2, text=#f5f5f7, muted=#a1a1a6, dim=#636366
 
-SECTION HEADER STYLE (use for every section):
+SECTION CARD STYLE (use for every section):
 <div style="background:#1c1c1e;border-radius:14px;padding:14px 16px;margin-bottom:10px;">
   <div style="font-size:11px;font-weight:700;color:SECTION_COLOR;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;">SECTION_TITLE</div>
   <!-- section content here -->
@@ -609,54 +815,186 @@ DATA ROW STYLE:
 BADGE STYLE:
 <span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(R,G,B,0.15);color:BADGE_COLOR;">Badge Text</span>
 
-Use these color assignments for sections: green for positive/recovery, yellow for warnings/sleep, orange for alerts/nutrition, blue for data/metrics, red for critical alerts, teal for hydration/info, purple for summary/planning.
+DELTA STYLE (for showing changes):
+<span style="color:#30d158;font-size:11px;font-weight:500;">↑ +14 vs yesterday (+27%)</span>  (green for positive)
+<span style="color:#ff453a;font-size:11px;font-weight:500;">↓ −3 vs yesterday (−5%)</span>  (red for negative)
+
+SLEEP BAR STYLE:
+<div style="height:10px;background:rgba(255,255,255,.06);border-radius:5px;overflow:hidden;display:flex;">
+  <div style="width:DEEP%;height:100%;background:#30d158;"></div>
+  <div style="width:LIGHT%;height:100%;background:#ffd60a;"></div>
+  <div style="width:REM%;height:100%;background:#bf5af2;"></div>
+  <div style="width:AWAKE%;height:100%;background:#ff453a;"></div>
+</div>
+
+KPI BOX STYLE (for key numbers):
+<div style="display:flex;gap:8px;margin-top:10px;">
+  <div style="flex:1;background:rgba(255,255,255,.03);border-radius:8px;padding:10px;text-align:center;">
+    <div style="font-size:18px;font-weight:700;color:#30d158;">VALUE</div>
+    <div style="font-size:10px;color:#a1a1a6;text-transform:uppercase;letter-spacing:.4px;margin-top:3px;">LABEL</div>
+  </div>
+</div>
+
+TIMELINE ROW STYLE:
+<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #2a2a2c;">
+  <div style="flex:0 0 75px;color:#0a84ff;font-weight:600;font-size:12px;">TIME</div>
+  <div style="flex:1;font-size:13px;">
+    <div style="color:#f5f5f7;font-weight:600;margin-bottom:2px;">WHAT</div>
+    <div style="color:#a1a1a6;font-size:11px;">DETAIL</div>
+  </div>
+</div>
+
+ENERGY CALC STYLE:
+<div style="background:rgba(0,0,0,.25);border-radius:6px;padding:8px;margin-top:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#a1a1a6;line-height:1.55;">
+  calculations here with <span style="color:#f5f5f7;font-weight:600;">totals bolded</span>
+</div>
+
+CONTEXTUAL NOTE STYLE:
+<div style="font-size:12px;color:#a1a1a6;font-style:italic;margin-top:6px;">Note text here</div>
+-- OR for important coach commentary (not italic, white text): --
+<div style="font-size:12px;color:#f5f5f7;margin-top:6px;">Commentary here with <b>key points bold</b></div>
+
+ALERT CARD (for supercompensation, warnings, etc.):
+<div style="background:#1c1c1e;border-radius:14px;padding:14px 16px;margin-bottom:10px;border:1px solid #30d158;background:rgba(48,209,88,.07);">
+  green border for positive alerts
+</div>
+<div style="background:#1c1c1e;border-radius:14px;padding:14px 16px;margin-bottom:10px;border:1px solid #ff9f0a;background:rgba(255,159,10,.06);">
+  orange border for warnings
+</div>
+
+FOOTER:
+<div style="text-align:center;color:#636366;font-size:11px;padding:14px 0 4px;">Summary line</div>
+
+Use these color assignments: green=#30d158 for positive/recovery, yellow=#ffd60a for warnings/sleep, orange=#ff9f0a for alerts/nutrition, blue=#0a84ff for data/metrics, red=#ff453a for critical, teal=#64d2ff for hydration/info, purple=#bf5af2 for summary/planning.
 """
 
     prompts = {
-        "morning": f"""Generate the full PhysioIQ Morning Report for today. Include ALL 13 sections with colored headers:
+        "morning": f"""Generate Ruben's PhysioIQ Morning Report. This must be a RICH, detailed, coach-quality report — NOT a generic dashboard. Every section must have contextual commentary explaining what the numbers MEAN, not just listing them.
 
-1. HEADER — Report title with date, user name, and a readiness badge (PUSH/MODERATE/DIAL BACK/REST) using appropriate badge color
-2. READINESS SCORE — Overall readiness assessment with score and color coding
-3. SLEEP ANALYSIS — Sleep score, quality assessment, time metrics (use yellow header)
-4. HRV STATUS — Current HRV, 7-day trend, recovery signal (use green header)
-5. BODY BATTERY — Current charge, projected drain, recommendations (use teal header)
-6. WEIGHT TREND — Current weight, trend direction, context (use blue header)
-7. RESTING HEART RATE — Current RHR, trend, what it signals (use purple header)
-8. STRESS LOAD — Average stress, breakdown, management tips (use orange header)
-9. ACTIVITY TARGET — Steps, active minutes, today's movement goals (use green header)
-10. NUTRITION PLAN — Today's macro targets, meal timing strategy (use orange header)
-11. TRAINING RECOMMENDATION — What to do today based on readiness (use blue header)
-12. HYDRATION PROTOCOL — Water intake targets, timing (use teal header)
-13. COACH'S NOTE — Personal insight, motivation, key focus for the day (use purple header)
+REQUIRED SECTIONS (in this order):
+
+1. **HEADER** — "Morning Report" title with today's date and day of week. Include TWO badges in the top-right:
+   - Readiness badge (PUSH/PUSH-lean/MODERATE/DIAL BACK/REST) with appropriate color
+   - HRV badge showing today's HRV value
+   Use the header style with flexbox layout.
+
+2. **HRV / READINESS (alert card)** — This is the MOST IMPORTANT section. Use an alert-style card (green border if HRV is above 7-day avg, orange if below).
+   - HRV overnight value with delta vs yesterday (absolute AND percentage) — e.g., "68.2 ms ↑ +14.4 vs yest 53.8 (+27%)"
+   - HRV vs 7-day average with interpretation
+   - RHR with delta vs yesterday — e.g., "37 bpm ↓ -2 vs yest 39"
+   - Overnight stress avg / max
+   - Readiness score with explanation of what's HELPING and what's HOLDING IT BACK
+   - **CONTEXTUAL PARAGRAPH**: Interpret what this combination means. Is this supercompensation? Declining trend? Stable baseline? Connect HRV + RHR + stress into a narrative. Example: "HRV 68.2 is your highest reading in weeks. This is classic supercompensation — after the week of stress, once you got home your nervous system bounced way above baseline."
+   - Give a clear CALL: "PUSH-leaning MODERATE. Hit the lift hard but don't add anything extra."
+
+3. **WEIGHT** — Current weight in KPI boxes (today's weight, target weight, delta vs last reading).
+   - Weekly velocity if data available
+   - Context: travel effects, glycogen status, trend direction
+   - Commentary note about what to expect
+
+4. **SLEEP DETAIL** — Duration prominently displayed.
+   - Visual sleep stage BAR (deep=green, light=yellow, REM=purple, awake=red) with percentages labeled
+   - Each stage on its own row: minutes + commentary (e.g., "Deep: 79 min ✓ (body protected this)", "REM: 20 min (low — flight late-arrival pattern)")
+   - Respiration rate
+   - Contextual paragraph: what did the body prioritize? What's good? What's low and why?
+
+5. **WORKOUT INTENSITY** — Based on readiness assessment.
+   - Clear recommendation for each activity (swim yardage/HR/TE targets, lift protocol with specific exercises/sets/reps/weights if known)
+   - Sauna recommendation
+   - Any injury notes or tests to run
+
+6. **TODAY'S TIMELINE** — Chronological plan using timeline row style:
+   - Pre-swim food + supplements + timing
+   - Swim details
+   - Post-swim nutrition
+   - Lift session
+   - Sauna
+   - Evening supplements + sleep target
+
+7. **ENERGY BALANCE** — Full TDEE calculation in monospace calc style:
+   - BMR line
+   - NEAT + TEF line
+   - Swim burn (show MET calculation)
+   - Lift burn (show MET calculation)
+   - Sauna burn
+   - TDEE total (bold)
+   - Eat target
+   - Planned deficit
+   - Context note
+
+8. **MACRO TARGETS** — Calories, protein floor, carbs, fat, sodium in data rows.
+   - Context for each if relevant (e.g., "recover from yesterday's fat spike")
+
+9. **SUPPLEMENTS** — Full daily schedule with timing in data rows.
+   - Note calcium citrate timing rules
+   - Note if smoothie day affects schedule
+
+10. **MERCURY STATUS** — Weekly budget used / remaining, what's available, low-mercury options.
+
+11. **COACH'S NOTE** — This is the SUMMARY. Must cover:
+    - Key finding from HRV/recovery
+    - Sleep concern if any
+    - Clear workout intensity call with reasoning
+    - One thing to watch for today
+    - Motivational closer tied to data
+
+12. **FOOTER** — Single compact line: "PhysioIQ · Morning · DATE · Location · Wt VALUE · HRV VALUE · RHR VALUE · READINESS_CALL"
 
 {html_style_instructions}{data_note}""",
 
-        "post_workout": f"""Generate the PhysioIQ Post-Workout Report. Include these sections with colored headers:
+        "post_workout": f"""Generate Ruben's PhysioIQ Post-Workout Report. Include rich contextual commentary.
 
+REQUIRED SECTIONS:
 1. HEADER — Post-workout report title with timestamp
-2. WORKOUT SUMMARY — What was done, duration, intensity (use green header)
-3. RECOVERY STATUS — Body battery drain, HR recovery, stress response (use teal header)
-4. CALORIC IMPACT — Calories burned estimate, net balance (use orange header)
-5. RECOVERY NUTRITION — What to eat NOW for recovery, macro targets (use blue header)
-6. REMAINING DAILY TARGETS — Updated macro/calorie targets for rest of day (use yellow header)
-7. HYDRATION RECOVERY — Fluid replacement needs (use teal header)
-8. NEXT SESSION PREVIEW — When to train next, what to focus on (use purple header)
-9. COACH'S NOTE — Performance observations, adjustments (use green header)
+2. WORKOUT SUMMARY — What was done, duration, intensity, how it compared to plan (use green header)
+3. RECOVERY STATUS — Body battery drain, HR recovery, stress response, comparison to typical (use teal header)
+4. CALORIC IMPACT — Calories burned estimate with calculation, updated net balance (use orange header)
+5. RECOVERY NUTRITION — SPECIFIC foods to eat NOW for recovery with macro targets (use blue header)
+6. REMAINING DAILY TARGETS — Updated macro/calorie targets accounting for workout burn and meals so far (use yellow header)
+7. HYDRATION RECOVERY — Fluid replacement needs with specific amounts (use teal header)
+8. NEXT SESSION PREVIEW — When to train next, what to focus on based on today's performance (use purple header)
+9. COACH'S NOTE — Performance observations, what went well, any adjustments needed (use green header)
 
 {html_style_instructions}{data_note}""",
 
-        "eod": f"""Generate the PhysioIQ End-of-Day Report. Include these sections with colored headers:
+        "eod": f"""Generate Ruben's PhysioIQ End-of-Day Report with the FULL GRADING SYSTEM.
 
-1. HEADER — EOD report title with date and overall grade
-2. DAILY SCORECARD — Overall grade for the day across all metrics (use blue header)
-3. NUTRITION RECAP — Total macros vs targets, meal quality assessment (use orange header)
-4. ACTIVITY SUMMARY — Steps, active minutes, calories burned (use green header)
-5. RECOVERY METRICS — Sleep readiness prediction, HRV trend, body battery (use teal header)
-6. WEIGHT TRACKING — Today's weight in context of weekly/monthly trend (use blue header)
-7. WINS — What went well today, celebrate progress (use green header)
-8. AREAS TO IMPROVE — Honest assessment of gaps (use yellow header)
-9. TOMORROW'S GAME PLAN — Training, nutrition, and recovery priorities (use purple header)
-10. COACH'S CLOSING NOTE — End-of-day insight and motivation (use purple header)
+REQUIRED SECTIONS:
+
+1. **HEADER** — "End-of-Day Report" with date. Prominently display the OVERALL LETTER GRADE as a large badge.
+
+2. **DAILY SCORECARD** — This is the centerpiece. Show a table/grid of 6 criteria, each with:
+   - Criterion name
+   - Letter grade (A/B/C/F) with color coding (A=green, B=yellow, C=orange, F=red)
+   - Brief explanation (e.g., "Protein 178/185g (96%), Cals 2050/2100 (98%), Carbs 195/200 (97%)")
+
+   The 6 criteria are:
+   1. **Macro Targets (P/Cal/C)**: A=all 3 within 95%+, B=2 of 3 within 90%, C=1 of 3 within 90%, F=all off >20%
+   2. **Deficit Band** (-600 to -800): A=in band or planned surplus, B=within ±200, C=within ±500, F=>-1100 or >+800
+   3. **Workout Execution**: A=hit planned intensity+duration, B=modified but completed, C=partial/dialed back, F=skipped without reason
+   4. **Supplement Compliance**: A=13/13+9PM on time, B=11-12/13, C=9-10/13, F=<9
+   5. **Recovery Discipline**: A=sleep≥7hr+mag+no PM caffeine+no alcohol, B=1 miss, C=2 misses, F=3+ misses or sleep<5hr
+   6. **Mercury/Nutrition Flags**: A=no flags, B=1 minor, C=1 major or 2 minor, F=mercury cap violated
+
+   Overall grade: A=5-6 at A, A-=4 at A rest B, B+=4 at A/B no C/F, B=mostly B 1-2 A, C+=2+ at C, C/D=3+ at C or any F, F=any single F
+
+3. **NUTRITION RECAP** — Total macros vs targets with percentage compliance for each macro. Meal-by-meal summary. Flag any issues. (orange header)
+
+4. **ACTIVITY SUMMARY** — Steps vs goal, active minutes, calories burned, workout details with comparison to plan. (green header)
+
+5. **ENERGY BALANCE** — Final TDEE calculation vs actual intake. Show actual deficit and compare to target band (-600 to -800). (blue header)
+
+6. **RECOVERY METRICS** — Current body battery, HRV trend direction, sleep readiness prediction for tonight. (teal header)
+
+7. **WEIGHT TRACKING** — Today's weight in context of weekly and monthly trend. Weekly velocity. (blue header)
+
+8. **WINS** — What went well today. Celebrate with specific data points. Be genuine. (green header)
+
+9. **AREAS TO IMPROVE** — Honest assessment of gaps. Specific, actionable. No sugar-coating but no catastrophizing. (yellow header)
+
+10. **TOMORROW'S GAME PLAN** — Training plan, nutrition adjustments based on today's grades, recovery priorities. (purple header)
+
+11. **COACH'S CLOSING NOTE** — Summarize the day's grade, acknowledge effort, set up tomorrow. End on a forward-looking note. (purple header)
 
 {html_style_instructions}{data_note}"""
     }
@@ -667,7 +1005,7 @@ Use these color assignments for sections: green for positive/recovery, yellow fo
     try:
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=4096,
+            max_tokens=8192,
             system=full_system,
             messages=[{"role": "user", "content": prompts.get(report_type, prompts["morning"])}]
         )
