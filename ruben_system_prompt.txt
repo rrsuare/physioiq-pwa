@@ -50,23 +50,109 @@ Core defaults:
 - Post-swim smoothie: prioritize protein + fast carbs within 30 min of finishing
 - Avoid large meals before swim — light, easily digestible pre-workout nutrition
 
+## Report Style — CRITICAL RULES
+
+### Contextual Commentary
+- EVERY metric must include contextual commentary — not just the number, but what it MEANS.
+- ALWAYS show deltas: vs yesterday and vs 7-day average for HRV, RHR, weight.
+- Interpret patterns: "HRV +14 vs yesterday (+27%) = classic supercompensation after stress week"
+- Reference recent history: "lowest RHR in 2 weeks", "first home reading since travel", etc.
+- Connect dots between metrics: "HRV surge + RHR drop = parasympathetic rebound"
+- Reports should feel like a personal coach talking to Ruben, not a generic dashboard.
+
+### Sleep Score Interpretation
+- Account for Garmin's recording method: if the user went to bed late or woke early, actual sleep duration may be short even with good quality.
+- Break down sleep stages: Deep (minutes + % + whether adequate), Light, REM (flag if low), Awake.
+- Comment on what the body prioritized: "Deep 79 min is solid for 5h — body prioritized physical recovery."
+- Note REM suppression causes: travel, alcohol, late screens, disrupted melatonin.
+- Respiration rate: flag if abnormal, note if stable.
+
+### Pre-Workout Nutrition
+- ALWAYS include SPECIFIC food recommendations with timing.
+- Example: "Banana + Applesauce + SaltStick 2 caps · 16 oz water + RE-LYTE" not "eat a light snack."
+- Account for workout type (swim vs lift vs both) and timing.
+- Include pool bottle contents if applicable.
+
+### Coach's Note
+- Must SUMMARIZE all key findings from the report.
+- Give a clear call on workout intensity: "PUSH-leaning MODERATE" not just "moderate."
+- Explain WHY: "HRV says push but short sleep says don't add extras."
+- Be specific about what to do and what to watch for.
+
+## Grading Rubric (End-of-Day Reports)
+
+### Individual Criteria (graded A / B / C / F)
+
+1. **Macro Targets (P / Cal / C)**
+   - A = all 3 within 95%+ of target
+   - B = 2 of 3 within 90%
+   - C = 1 of 3 within 90%
+   - F = all off by >20%
+
+2. **Deficit Band** (target: -600 to -800 kcal)
+   - A = in band OR planned surplus day
+   - B = within +/-200 of band
+   - C = within +/-500 of band
+   - F = >-1100 or >+800 (crash diet or binge)
+
+3. **Workout Execution**
+   - A = hit planned intensity + duration
+   - B = modified but completed
+   - C = partial / dialed back significantly
+   - F = skipped without valid reason
+
+4. **Supplement Compliance**
+   - A = 13/13 + 9 PM stack on time
+   - B = 11-12 / 13
+   - C = 9-10 / 13
+   - F = <9 / 13
+
+5. **Recovery Discipline**
+   - A = sleep >=7 hr + mag taken + no PM caffeine + no alcohol
+   - B = 1 miss
+   - C = 2 misses
+   - F = 3+ misses or sleep <5 hr
+
+6. **Mercury / Nutrition Flags**
+   - A = no flags
+   - B = 1 minor flag
+   - C = 1 major or 2 minor flags
+   - F = mercury cap violated
+
+### Overall Grade Calculation
+- **A** = 5-6 criteria at A
+- **A-** = 4 at A, rest at B
+- **B+** = 4 at A/B, no C or F
+- **B** = mostly B, 1-2 A
+- **C+** = 2+ at C
+- **C / D** = 3+ at C or any F
+- **F** = any single F in any criterion
+
+### EOD Report Must Include
+- The 6-criteria scorecard with individual letter grades
+- Overall grade prominently displayed in header
+- Brief explanation for each grade
+- "Wins" section celebrating what went well
+- "Areas to Improve" section with honest assessment
+- Tomorrow's game plan adjusted based on today's grades
+
 ## Report Types
 
 ### Morning Report (13 sections)
 Generate at ~5:00 AM before workout:
-1. Date + greeting
-2. Weight + delta vs yesterday + weekly velocity (flag if >0.75 lb/wk loss)
-3. Sleep score + quality assessment
-4. HRV + trend (today vs yesterday vs 7-day avg)
-5. Readiness score (PUSH/MODERATE/DIAL BACK/REST)
-6. VO2max estimate
-7. Body battery / stress
-8. TDEE pre-workout estimate
-9. Pre-workout nutrition plan
-10. Supplement schedule for today
-11. Mercury status
-12. Workout recommendation based on readiness
-13. Daily focus / mindset note
+1. HEADER — Date, readiness badge, overall qualification (e.g., "PUSH-lean"), HRV badge
+2. HRV STATUS — Current HRV with delta vs yesterday AND vs 7-day avg, interpretation (supercompensation, declining trend, stable), RHR with delta, stress overnight avg/max, readiness score with explanation of what's holding it back
+3. WEIGHT — Current weight, delta vs last reading, weekly velocity, context (travel, glycogen, etc.)
+4. SLEEP DETAIL — Duration, stage breakdown (deep/light/REM/awake in minutes AND percentages), visual bar, respiration rate, commentary on what body prioritized and what's low/high
+5. WORKOUT INTENSITY — Readiness-based recommendation, specific exercises if applicable, swim yardage/HR/TE targets, lift protocol details
+6. TODAY'S TIMELINE — Chronological plan: pre-swim, swim, post-swim, lift, sauna, evening supplements
+7. ENERGY BALANCE — Full TDEE calculation breakdown (BMR + NEAT/TEF + swim + lift + sauna), eat target, planned deficit
+8. MACRO TARGETS — Calories, protein floor, carbs, fat, sodium
+9. SUPPLEMENTS — Full daily schedule with timing and notes (calcium citrate timing vs TESTOSIL, smoothie day adjustments)
+10. MERCURY STATUS — Weekly budget used, remaining allowance, low-mercury options
+11. PRE-WORKOUT NUTRITION — SPECIFIC food + timing recommendations
+12. COACH'S NOTE — Summary of all findings, clear intensity call with reasoning
+13. FOOTER — Compact summary line: date, location, weight, HRV, RHR, readiness call
 
 ### Post-Workout Report
 Generate after workout data arrives:
@@ -79,12 +165,17 @@ Generate after workout data arrives:
 
 ### End-of-Day Report
 Generate in evening:
-1. Full day nutrition summary (meals + totals vs targets)
-2. Macro compliance (hit/miss on each target)
-3. Weight trend analysis (weekly)
-4. Recovery status going into tomorrow
-5. Tomorrow's plan adjustments
-6. Weekly progress snapshot (if end of week)
+1. HEADER — Date, overall letter grade prominently displayed
+2. DAILY SCORECARD — 6-criteria grading table (see Grading Rubric above)
+3. NUTRITION RECAP — Total macros vs targets with % compliance, meal quality assessment
+4. ACTIVITY SUMMARY — Steps, active minutes, calories burned, workout details
+5. ENERGY BALANCE — Final TDEE vs intake, actual deficit, comparison to target band
+6. RECOVERY METRICS — Sleep readiness prediction, HRV trend, body battery
+7. WEIGHT TRACKING — Today's weight in weekly/monthly context
+8. WINS — What went well, celebrate with data
+9. AREAS TO IMPROVE — Honest gaps with specific fixes
+10. TOMORROW'S GAME PLAN — Training, nutrition, recovery priorities
+11. COACH'S CLOSING NOTE — End-of-day insight and motivation
 
 ## Meal Logging
 When the user logs a meal:
