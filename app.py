@@ -1476,6 +1476,141 @@ def delete_meal(meal_id):
     db.commit()
     return jsonify({"success": True})
 
+@app.route("/api/meals/import", methods=["POST"])
+@require_auth
+def import_meal_plan():
+    """Parse pasted meal plan text (from Excel) and bulk-import meals.
+    Expects tab-separated or structured text with meal sections like PRE-SWIM, POST-SWIM, BREAKFAST, etc.
+    Each food line should have: food_item, qty, protein_g, calories, carbs_g, consumed? columns."""
+    data = request.json or {}
+    raw_text = data.get("text", "").strip()
+    if not raw_text:
+        return jsonify({"error": "No meal plan text provided"}), 400
+
+    today = date.today().isoformat()
+    db = get_db()
+
+    # Delete existing meals for today (fresh import replaces all)
+    db.execute("DELETE FROM meals WHERE user_id = ? AND date = ?", (g.user_id, today))
+
+    # Parse the meal plan text
+    meals_imported = []
+    current_section = "other"
+    section_map = {
+        "pre-swim": "pre_swim", "pre swim": "pre_swim",
+        "post-swim": "post_swim", "post swim": "post_swim",
+        "breakfast": "breakfast", "lunch": "lunch",
+        "afternoon snack": "snack", "snack": "snack",
+        "dinner": "dinner", "night": "night",
+        "late night": "late_night",
+    }
+
+    lines = raw_text.split("\n")
+    for line in lines:
+        line_stripped = line.strip()
+        if not line_stripped:
+            continue
+
+        # Check if this is a section header (e.g., "▸  PRE-SWIM  ~5:30 AM" or "PRE-SWIM subtotal:")
+        line_lower = line_stripped.lower()
+
+        # Skip subtotal/total lines
+        if "subtotal" in line_lower or line_lower.startswith("totals") or line_lower.startswith("daily totals") or line_lower.startswith("target") or line_lower.startswith("vs ") or "consumed so far" in line_lower or "remaining needed" in line_lower:
+            continue
+
+        # Skip header rows and non-food lines
+        if line_lower.startswith("meal / time") or line_lower.startswith("meal/time") or line_lower.startswith("food item") or "supplement" in line_lower or "sauna" in line_lower or "physioiq" in line_lower or "tdee" in line_lower or "test_revert" in line_lower or "notes / changes" in line_lower or "claude day grade" in line_lower:
+            continue
+
+        # Detect section headers
+        found_section = False
+        for key, val in section_map.items():
+            if key in line_lower and ("▸" in line_stripped or "subtotal" not in line_lower):
+                current_section = val
+                found_section = True
+                break
+        if found_section:
+            continue
+
+        # Try to parse as a food line — split by tabs
+        parts = line.split("\t")
+        # Clean up parts
+        parts = [p.strip() for p in parts]
+
+        # Look for a line with: food_name, qty, protein, calories, carbs
+        # The Excel format has: FOOD ITEM | QTY | PROTEIN g | CALORIES | CARBS g | CONSUMED? | NOTES
+        # But columns might shift. Try to find numeric values.
+        food_name = None
+        protein = 0
+        calories = 0
+        carbs = 0
+        fat = 0
+        consumed = None
+
+        if len(parts) >= 5:
+            # Try standard format: [empty/food], food, qty, protein, calories, carbs, consumed, notes
+            # Find the food name (first non-empty non-numeric string)
+            for i, p in enumerate(parts):
+                if p and not p.replace(".", "").replace("-", "").isdigit() and p.lower() not in ("yes", "no", ""):
+                    food_name = p
+                    break
+
+            if food_name:
+                # Find numeric values after the food name
+                nums = []
+                for p in parts:
+                    try:
+                        v = float(p)
+                        nums.append(v)
+                    except (ValueError, TypeError):
+                        pass
+
+                # Expected order: qty, protein, calories, carbs (we want protein, calories, carbs)
+                if len(nums) >= 4:
+                    # qty, protein, calories, carbs
+                    protein = nums[1]
+                    calories = nums[2]
+                    carbs = nums[3]
+                elif len(nums) >= 3:
+                    protein = nums[0]
+                    calories = nums[1]
+                    carbs = nums[2]
+
+                # Check consumed status
+                for p in parts:
+                    if p.lower() == "yes":
+                        consumed = True
+                    elif p.lower() == "no":
+                        consumed = False
+
+                # Skip zero-calorie placeholder lines
+                if calories == 0 and protein == 0 and carbs == 0:
+                    continue
+
+                # Save the meal
+                notes = f"Consumed: {'Yes' if consumed else 'Planned'}" if consumed is not None else "Planned"
+                db.execute("""
+                    INSERT INTO meals (user_id, date, meal_type, description, calories, protein_g, carbs_g, fat_g, fiber_g, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (g.user_id, today, current_section, food_name, calories, protein, carbs, fat, 0, notes))
+
+                meals_imported.append({
+                    "section": current_section,
+                    "food": food_name,
+                    "protein": protein,
+                    "calories": calories,
+                    "carbs": carbs,
+                    "consumed": consumed
+                })
+
+    db.commit()
+    return jsonify({
+        "success": True,
+        "meals_imported": len(meals_imported),
+        "meals": meals_imported
+    })
+
+
 # --- Workout Logs ---
 
 @app.route("/api/workouts", methods=["GET"])
