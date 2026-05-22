@@ -544,17 +544,29 @@ def build_context(user_id, include_today=True):
         (user_id, today)
     ).fetchall()
     if meals:
-        context_parts.append(f"\nTODAY'S MEALS:")
+        context_parts.append(f"\nTODAY'S MEALS (from Excel meal plan):")
         total_cal, total_p, total_c, total_f = 0, 0, 0, 0
+        consumed_cal, consumed_p, consumed_c = 0, 0, 0
+        planned_cal, planned_p, planned_c = 0, 0, 0
         for m in meals:
-            context_parts.append(f"  {m['meal_type'].title()}: {m['description']}")
+            notes = m.get('notes', '') or ''
+            is_consumed = 'Consumed: Yes' in notes
+            status = "✓ EATEN" if is_consumed else "○ PLANNED"
+            context_parts.append(f"  [{status}] {m['meal_type'].title()}: {m['description']}")
             if m["calories"]:
                 context_parts.append(f"    Calories: {m['calories']} | P: {m['protein_g']}g | C: {m['carbs_g']}g | F: {m['fat_g']}g")
-                total_cal += m["calories"] or 0
-                total_p += m["protein_g"] or 0
-                total_c += m["carbs_g"] or 0
-                total_f += m["fat_g"] or 0
-        context_parts.append(f"  TOTALS SO FAR: {total_cal} cal | P: {total_p:.0f}g | C: {total_c:.0f}g | F: {total_f:.0f}g")
+                cal = m["calories"] or 0
+                p = m["protein_g"] or 0
+                c = m["carbs_g"] or 0
+                f = m["fat_g"] or 0
+                total_cal += cal; total_p += p; total_c += c; total_f += f
+                if is_consumed:
+                    consumed_cal += cal; consumed_p += p; consumed_c += c
+                else:
+                    planned_cal += cal; planned_p += p; planned_c += c
+        context_parts.append(f"  FULL DAY PLAN TOTAL: {total_cal} cal | P: {total_p:.0f}g | C: {total_c:.0f}g | F: {total_f:.0f}g")
+        context_parts.append(f"  CONSUMED SO FAR: {consumed_cal} cal | P: {consumed_p:.0f}g | C: {consumed_c:.0f}g")
+        context_parts.append(f"  REMAINING PLANNED: {planned_cal} cal | P: {planned_p:.0f}g | C: {planned_c:.0f}g")
 
     # Today's workout logs (lift data, swim notes, etc.)
     workouts = db.execute(
@@ -569,13 +581,50 @@ def build_context(user_id, include_today=True):
             if w['notes']:
                 context_parts.append(f"  Notes: {w['notes']}")
 
-    # Recent daily state
+    # Meal plan metadata from Excel (TDEE, supplements, sauna) stored by Dropbox fetch
     state = db.execute(
         "SELECT state_json FROM daily_state WHERE user_id = ? AND date = ?",
         (user_id, today)
     ).fetchone()
     if state:
-        context_parts.append(f"\nTODAY'S STATE: {state['state_json']}")
+        try:
+            state_data = json.loads(state['state_json'])
+            meta = state_data.get("meal_plan_meta", {})
+
+            if meta.get("tdee"):
+                context_parts.append(f"\nEXCEL MEAL PLAN — PREVIOUS TDEE (from spreadsheet): {meta['tdee']} kcal")
+                if meta.get("tdee_breakdown"):
+                    context_parts.append(f"  Previous TDEE Breakdown: {meta['tdee_breakdown']}")
+                context_parts.append(f"  NOTE: This is the PREVIOUS day's TDEE from the Excel. You must CALCULATE today's TDEE using the formula: BMR(1780) + NEAT+TEF(steps×0.045 + cal_in×0.10) + Swim burn(from Garmin activity) + Lift burn(from workout log) + Sauna burn(0.086 × weight_kg × minutes). Use the Garmin activity data above for swim calories/duration.")
+
+            if meta.get("sauna"):
+                context_parts.append(f"\nEXCEL MEAL PLAN — SAUNA:")
+                context_parts.append(f"  Sauna today: {meta.get('sauna', 'no').upper()}")
+                if meta.get("sauna_minutes"):
+                    context_parts.append(f"  Duration: {meta['sauna_minutes']} min")
+                if meta.get("sauna_calories"):
+                    context_parts.append(f"  Est. Calories burned: {meta['sauna_calories']}")
+
+            if meta.get("supplements"):
+                context_parts.append(f"\nEXCEL MEAL PLAN — SUPPLEMENT TRACKER (from spreadsheet):")
+                context_parts.append(f"  IMPORTANT: Use this supplement data as the source of truth. Follow the TAKEN? and TIMING columns exactly.")
+                if meta.get("smoothie_note"):
+                    context_parts.append(f"  Smoothie note: {meta['smoothie_note']}")
+                if meta.get("calcium_rule"):
+                    context_parts.append(f"  Calcium rule: {meta['calcium_rule']}")
+                if meta.get("skip_calcium") is True:
+                    context_parts.append(f"  ⛔ CALCIUM CITRATE: SKIP TODAY — smoothie provides calcium. Do NOT tell user to take calcium.")
+                elif meta.get("skip_calcium") is False:
+                    context_parts.append(f"  ⚠️ CALCIUM CITRATE: TAKE TODAY — no smoothie in plan, take at scheduled time.")
+                for supp in meta["supplements"]:
+                    taken_str = supp.get("taken", "?")
+                    context_parts.append(f"  - {supp['name']}: Taken={taken_str} | Timing: {supp.get('timing', '?')}")
+
+            context_parts.append(f"\n  Sheet used: {meta.get('sheet', 'unknown')}")
+            context_parts.append(f"  Day type: {meta.get('sheet', 'unknown')}")
+
+        except Exception as e:
+            logger.warning(f"Failed to parse daily_state: {e}")
 
     return "\n".join(context_parts)
 
@@ -1769,9 +1818,18 @@ def fetch_meal_plan_from_dropbox():
             if len(row) > 5 and row[5]:
                 meta["sauna_calories"] = safe_float(row[5])
 
-        # Protein smoothie check (Row 5)
+        # Protein smoothie check (Row 5) — col B has calcium note, col F has skip/take rule
         if "smoothie" in r0:
             meta["smoothie_note"] = r1
+            # Check cols E-F for the calcium skip/take rule
+            if len(row) > 5 and row[5]:
+                meta["calcium_rule"] = row[5].strip()
+            # Check if any column mentions "skip" calcium (smoothie day = skip calcium)
+            row_joined = " ".join(c.strip() for c in row if c).lower()
+            if "skip" in row_joined and "calcium" in row_joined:
+                meta["skip_calcium"] = True
+            elif "take" in row_joined and "calcium" in row_joined:
+                meta["skip_calcium"] = False
 
     # Extract supplement data (rows 6-11)
     supplements = []
