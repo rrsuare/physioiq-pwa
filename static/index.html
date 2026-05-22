@@ -147,11 +147,11 @@ body { font-family: -apple-system, 'Inter', 'SF Pro', sans-serif; background: va
 <div id="onboarding">
 <h1>PHYSIO<span>IQ</span></h1>
 <p class="intro">Set up your personal body performance system. This only takes a minute.</p>
-<div class="field"><label>Your Name</label><input type="text" id="ob-name" placeholder="Ruben"></div>
-<div class="field"><label>Email</label><input type="email" id="ob-email" placeholder="you@email.com"></div>
-<div class="field"><label>Age</label><input type="number" id="ob-age" placeholder="45"></div>
-<div class="field"><label>Height</label><input type="text" id="ob-height" placeholder="5'10&quot;"></div>
-<div class="field"><label>Current Weight (lb)</label><input type="number" id="ob-weight" placeholder="185" step="0.1"></div>
+<div class="field"><label>Your Name</label><input type="text" id="ob-name" value="Ruben"></div>
+<div class="field"><label>Email</label><input type="email" id="ob-email" value="r.suare@3sgconsulting.net"></div>
+<div class="field"><label>Age</label><input type="number" id="ob-age" value="45"></div>
+<div class="field"><label>Height</label><input type="text" id="ob-height" value="5'10&quot;"></div>
+<div class="field"><label>Current Weight (lb)</label><input type="number" id="ob-weight" value="173" step="0.1"></div>
 <div class="field"><label>Goal</label>
 <select id="ob-goal">
 <option value="lean_recomp">Lean Recomposition (lose fat, keep muscle)</option>
@@ -197,7 +197,7 @@ body { font-family: -apple-system, 'Inter', 'SF Pro', sans-serif; background: va
 <div id="dropbox-setup" style="display:none;margin-bottom:8px;">
 <div class="card" style="padding:10px 12px;">
 <div style="font-size:11px;color:var(--text2);margin-bottom:6px;">Paste your Dropbox share link for the Excel meal plan:</div>
-<input type="text" id="dropbox-url" placeholder="https://www.dropbox.com/scl/fi/..." style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:6px;">
+<input type="text" id="dropbox-url" value="https://www.dropbox.com/scl/fi/3o4iz4efbgj8keaf4hti7/Meal-Plans-2026-v6.xlsx?rlkey=fqjnvhmv75pddqaf4049gzaqc&st=ydw0rvs5&dl=0" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:6px;">
 <div style="display:flex;gap:6px;">
 <button class="gen-btn" style="flex:1;font-size:12px;padding:6px;" onclick="saveDropboxLink()">Save Link</button>
 <button class="gen-btn" style="flex:0;font-size:12px;padding:6px 12px;background:var(--card);border:1px solid var(--border);" onclick="document.getElementById('dropbox-setup').style.display='none'">Cancel</button>
