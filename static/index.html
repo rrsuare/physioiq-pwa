@@ -192,8 +192,19 @@ body { font-family: -apple-system, 'Inter', 'SF Pro', sans-serif; background: va
 </div>
 <div style="display:flex;gap:6px;margin-bottom:8px;">
 <div class="add-btn" style="flex:1;margin-bottom:0;" onclick="openMealModal()">+ Log Meal</div>
-<div class="add-btn" style="flex:1;margin-bottom:0;background:var(--teal);color:#000;" onclick="openImportModal()">Paste Meal Plan</div>
+<button class="gen-btn" id="fetch-plan-btn" style="flex:1;background:var(--teal);color:#000;margin:0;border-radius:14px;font-size:13px;" onclick="fetchMealPlan()">Fetch Meal Plan</button>
 </div>
+<div id="dropbox-setup" style="display:none;margin-bottom:8px;">
+<div class="card" style="padding:10px 12px;">
+<div style="font-size:11px;color:var(--text2);margin-bottom:6px;">Paste your Dropbox share link for the Excel meal plan:</div>
+<input type="text" id="dropbox-url" placeholder="https://www.dropbox.com/scl/fi/..." style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:6px;">
+<div style="display:flex;gap:6px;">
+<button class="gen-btn" style="flex:1;font-size:12px;padding:6px;" onclick="saveDropboxLink()">Save Link</button>
+<button class="gen-btn" style="flex:0;font-size:12px;padding:6px 12px;background:var(--card);border:1px solid var(--border);" onclick="document.getElementById('dropbox-setup').style.display='none'">Cancel</button>
+</div>
+</div>
+</div>
+<div id="fetch-status" style="font-size:12px;margin-bottom:8px;display:none;padding:4px 8px;border-radius:8px;"></div>
 <div class="card"><div class="card-title">Today's Meals</div><div id="meal-list"><div class="loading">No meals logged yet</div></div></div>
 <button class="gen-btn" style="background:var(--purple);margin-top:8px;" onclick="getMealRec()">Get Meal Recommendation</button>
 </div>
@@ -335,6 +346,7 @@ async function init() {
   loadChatHistory();
   loadMeals();
   loadReports();
+  loadDropboxSetting();
 }
 
 function showOnboarding() {
@@ -572,7 +584,68 @@ async function deleteMeal() {
   }
 }
 
-// --- Meal Plan Import ---
+// --- Dropbox Meal Plan ---
+var dropboxUrlSaved = false;
+
+async function loadDropboxSetting() {
+  try {
+    var settings = await api('/api/settings');
+    if (settings && settings.dropbox_meal_plan_url) {
+      dropboxUrlSaved = true;
+      document.getElementById('dropbox-url').value = settings.dropbox_meal_plan_url;
+    }
+  } catch(e) {}
+}
+
+async function fetchMealPlan() {
+  if (!dropboxUrlSaved) {
+    // Show the setup UI so user can paste their Dropbox link
+    document.getElementById('dropbox-setup').style.display = 'block';
+    return;
+  }
+  var btn = document.getElementById('fetch-plan-btn');
+  var status = document.getElementById('fetch-status');
+  btn.disabled = true; btn.textContent = 'Fetching...';
+  status.style.display = 'block';
+  status.textContent = 'Downloading from Dropbox & parsing Excel...';
+  status.style.color = 'var(--text2)';
+  status.style.background = 'var(--card)';
+  try {
+    var result = await api('/api/meals/fetch-plan', { method: 'POST', body: '{}' });
+    if (result.error) {
+      status.textContent = 'Error: ' + result.error;
+      status.style.color = 'var(--red)';
+    } else {
+      status.textContent = 'Imported ' + result.meals_imported + ' meals from "' + (result.sheet || 'sheet') + '"';
+      status.style.color = 'var(--green)';
+      loadMeals();
+      setTimeout(function() { status.style.display = 'none'; }, 4000);
+    }
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    status.style.color = 'var(--red)';
+  }
+  btn.disabled = false; btn.textContent = 'Fetch Meal Plan';
+}
+
+async function saveDropboxLink() {
+  var url = document.getElementById('dropbox-url').value.trim();
+  if (!url || !url.includes('dropbox.com')) {
+    alert('Please paste a valid Dropbox share link');
+    return;
+  }
+  try {
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({ dropbox_meal_plan_url: url }) });
+    dropboxUrlSaved = true;
+    document.getElementById('dropbox-setup').style.display = 'none';
+    // Now fetch the plan automatically
+    fetchMealPlan();
+  } catch (e) {
+    alert('Failed to save: ' + e.message);
+  }
+}
+
+// --- Paste Meal Plan (fallback) ---
 function openImportModal() {
   document.getElementById('import-text').value = '';
   document.getElementById('import-status').style.display = 'none';
