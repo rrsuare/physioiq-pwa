@@ -13,11 +13,26 @@ import time
 import logging
 import traceback
 import threading
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 from io import BytesIO
 import requests as http_requests  # renamed to avoid clash with flask.request
+
+# ---------------------------------------------------------------------------
+# Timezone helper — server runs in UTC but user is in US/Central (CDT = UTC-5)
+# All user_today() calls should use user_today() instead.
+# ---------------------------------------------------------------------------
+USER_TZ_OFFSET = timedelta(hours=-5)  # CDT (Central Daylight Time)
+USER_TZ = timezone(USER_TZ_OFFSET)
+
+def user_today():
+    """Return today's date in the user's timezone (US/Central)."""
+    return datetime.now(USER_TZ).date()
+
+def user_now():
+    """Return current datetime in the user's timezone."""
+    return datetime.now(USER_TZ)
 
 # Set up logging so errors show in Render logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -240,7 +255,7 @@ def build_context(user_id, include_today=True):
     if not user:
         return ""
 
-    today = date.today().isoformat()
+    today = user_today().isoformat()
     context_parts = []
 
     # Always include current date/time at the TOP so Claude knows what day it is
@@ -465,7 +480,7 @@ def build_context(user_id, include_today=True):
                     context_parts.append(f"\n  GARMIN ACTIVITIES TODAY: None recorded")
 
         # Yesterday for comparison
-        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        yesterday = (user_today() - timedelta(days=1)).isoformat()
         garmin_y = db.execute(
             "SELECT * FROM garmin_data WHERE user_id = ? AND date = ?",
             (user_id, yesterday)
@@ -481,7 +496,7 @@ def build_context(user_id, include_today=True):
             context_parts.append(f"  Steps: {garmin_y['steps']}")
 
         # Day before yesterday for 3-day trend
-        day_before = (date.today() - timedelta(days=2)).isoformat()
+        day_before = (user_today() - timedelta(days=2)).isoformat()
         garmin_db = db.execute(
             "SELECT * FROM garmin_data WHERE user_id = ? AND date = ?",
             (user_id, day_before)
@@ -493,7 +508,7 @@ def build_context(user_id, include_today=True):
             context_parts.append(f"  Resting HR: {garmin_db['resting_hr']}")
 
         # 7-day averages and trends
-        week_ago = (date.today() - timedelta(days=7)).isoformat()
+        week_ago = (user_today() - timedelta(days=7)).isoformat()
         week_rows = db.execute(
             "SELECT date, hrv, resting_hr, weight_lb, sleep_score, body_battery, stress_avg FROM garmin_data WHERE user_id = ? AND date >= ? ORDER BY date",
             (user_id, week_ago)
@@ -576,7 +591,7 @@ def chat_with_claude(user_id, user_message):
         return {"error": "User not found"}
 
     # Auto-pull Garmin data if not already pulled today
-    today = date.today().isoformat()
+    today = user_today().isoformat()
     has_garmin_today = db.execute(
         "SELECT COUNT(*) as cnt FROM garmin_data WHERE user_id = ? AND date = ?",
         (user_id, today)
@@ -663,7 +678,7 @@ def pull_garmin_data(user_id, target_date=None, force=False):
         logger.error("Garmin credentials not configured (email=%s, password=%s)", bool(email), bool(password))
         return {"error": "Garmin credentials not configured"}
 
-    target = target_date or date.today().isoformat()
+    target = target_date or user_today().isoformat()
 
     # --- Rate-limit cooldown: don't retry login within 15 minutes of a 429 failure ---
     token_dir = os.path.join(os.path.dirname(app.config["DATABASE"]), ".garmin_tokens")
@@ -934,7 +949,7 @@ def generate_report(user_id, report_type="morning", report_id=None):
     if not user:
         return {"error": "User not found"}
 
-    today = date.today().isoformat()
+    today = user_today().isoformat()
 
     # Auto-pull Garmin data before generating the report
     if app.config["GARMIN_EMAIL"] and app.config["GARMIN_PASSWORD"]:
@@ -1388,7 +1403,7 @@ def chat_history():
 @app.route("/api/meals", methods=["GET"])
 @require_auth
 def get_meals():
-    target_date = request.args.get("date", date.today().isoformat())
+    target_date = request.args.get("date", user_today().isoformat())
     db = get_db()
     meals = db.execute(
         "SELECT * FROM meals WHERE user_id = ? AND date = ? ORDER BY created_at",
@@ -1402,7 +1417,7 @@ def add_meal():
     data = request.json or {}
     db = get_db()
 
-    meal_date = data.get("date", date.today().isoformat())
+    meal_date = data.get("date", user_today().isoformat())
     meal_type = data.get("meal_type", "snack")
     description = data.get("description", "").strip()
 
@@ -1498,7 +1513,7 @@ def import_meal_plan():
     if not raw_text:
         return jsonify({"error": "No meal plan text provided"}), 400
 
-    today = date.today().isoformat()
+    today = user_today().isoformat()
     db = get_db()
 
     # Delete existing meals for today (fresh import replaces all)
@@ -1654,7 +1669,7 @@ def save_settings():
 def fetch_meal_plan_from_dropbox():
     """Download the Excel meal plan from the user's saved Dropbox link, parse it, and import meals."""
     db = get_db()
-    today = date.today().isoformat()
+    today = user_today().isoformat()
 
     # Get Dropbox URL from settings
     row = db.execute("SELECT value FROM user_settings WHERE user_id = ? AND key = 'dropbox_meal_plan_url'",
@@ -1686,26 +1701,34 @@ def fetch_meal_plan_from_dropbox():
         import openpyxl
         wb = openpyxl.load_workbook(BytesIO(resp.content), read_only=True, data_only=True)
 
-        # Find today's sheet or the most relevant sheet
-        # Sheets might be named by date, week, or be the first/active sheet
+        # Sheet selection based on day of week
+        # Sheets: "Long Swim Day" (Mon/Wed/Fri), "Short Swim + Lift" (Tue/Thu/Sat), "Rest Day" (Sun), "Travel Day"
         target_sheet = None
-        today_str = date.today().strftime("%m/%d")       # e.g., "05/21"
-        today_str2 = date.today().strftime("%-m/%-d")    # e.g., "5/21"
-        today_str3 = date.today().strftime("%Y-%m-%d")   # e.g., "2026-05-21"
-        today_str4 = date.today().strftime("%b %d")      # e.g., "May 21"
-        today_dow = date.today().strftime("%A")           # e.g., "Thursday"
+        today_weekday = user_today().weekday()  # 0=Monday ... 6=Sunday
+        sheet_names = [ws.title for ws in wb.worksheets]
+
+        # Map day-of-week to sheet name keywords
+        day_to_sheet = {
+            0: "long swim",    # Monday
+            1: "short swim",   # Tuesday
+            2: "long swim",    # Wednesday
+            3: "short swim",   # Thursday
+            4: "long swim",    # Friday
+            5: "short swim",   # Saturday
+            6: "rest",         # Sunday
+        }
+        target_keyword = day_to_sheet.get(today_weekday, "rest")
+        logger.info(f"[DROPBOX] Sheets: {sheet_names}, today={user_today().strftime('%A')}, looking for: '{target_keyword}'")
 
         for ws in wb.worksheets:
-            ws_name = ws.title.lower().strip()
-            if today_str in ws_name or today_str2 in ws_name or today_str3 in ws_name or today_str4.lower() in ws_name or today_dow.lower() in ws_name:
+            if target_keyword in ws.title.lower():
                 target_sheet = ws
-                logger.info(f"[DROPBOX] Found today's sheet: '{ws.title}'")
+                logger.info(f"[DROPBOX] Matched sheet: '{ws.title}'")
                 break
 
         if not target_sheet:
-            # Use the active sheet or first sheet
             target_sheet = wb.active or wb.worksheets[0]
-            logger.info(f"[DROPBOX] Using sheet: '{target_sheet.title}'")
+            logger.info(f"[DROPBOX] Fallback to sheet: '{target_sheet.title}'")
 
         # Read all rows into a list
         rows = []
@@ -1718,142 +1741,149 @@ def fetch_meal_plan_from_dropbox():
         logger.error(f"[DROPBOX] Excel parse failed: {e}\n{traceback.format_exc()}")
         return jsonify({"error": f"Failed to parse Excel file: {str(e)}"}), 500
 
-    # Parse the meal plan from rows
+    # ---- Extract metadata (TDEE, supplements, sauna) ----
+    meta = {"sheet": target_sheet.title if target_sheet else "unknown"}
+
+    def safe_float(val):
+        try:
+            return float(str(val).replace(",", "").strip())
+        except (ValueError, TypeError, AttributeError):
+            return 0
+
+    for row in rows[:15]:  # Metadata is in first ~15 rows
+        r0 = row[0].strip().lower() if row[0] else ""
+        r1 = row[1].strip() if len(row) > 1 and row[1] else ""
+
+        # TDEE (Row 3): first cell contains "tdee", second cell is the number
+        if "tdee" in r0:
+            meta["tdee"] = safe_float(r1)
+            # Row 3 col C often has the TDEE breakdown text
+            if len(row) > 2 and row[2]:
+                meta["tdee_breakdown"] = row[2].strip()
+
+        # Sauna (Row 13): "SAUNA TODAY?" | Yes/No | minutes | "min" | "EST. CALORIES" | cal_number
+        if "sauna" in r0:
+            meta["sauna"] = r1.lower() if r1 else "no"
+            if len(row) > 2 and row[2]:
+                meta["sauna_minutes"] = safe_float(row[2])
+            if len(row) > 5 and row[5]:
+                meta["sauna_calories"] = safe_float(row[5])
+
+        # Protein smoothie check (Row 5)
+        if "smoothie" in r0:
+            meta["smoothie_note"] = r1
+
+    # Extract supplement data (rows 6-11)
+    supplements = []
+    for row in rows[6:12]:
+        if len(row) >= 3 and row[0] and row[0].strip():
+            supp_name = row[0].strip()
+            taken = row[1].strip() if len(row) > 1 and row[1] else ""
+            timing = row[2].strip() if len(row) > 2 and row[2] else ""
+            if supp_name.lower() not in ("supplement", "") and "◆" not in supp_name:
+                supplements.append({"name": supp_name, "taken": taken, "timing": timing})
+            # Also check columns E-G for right-side supplements
+            if len(row) > 5 and row[5] and row[5].strip():
+                supp2_name = row[5].strip()
+                taken2 = row[6].strip() if len(row) > 6 and row[6] else ""
+                timing2 = row[7].strip() if len(row) > 7 and row[7] else ""
+                if supp2_name.lower() not in ("supplement", ""):
+                    supplements.append({"name": supp2_name, "taken": taken2, "timing": timing2})
+    meta["supplements"] = supplements
+
+    logger.info(f"[DROPBOX] Metadata: TDEE={meta.get('tdee')}, sauna={meta.get('sauna')}/{meta.get('sauna_minutes')}min, supps={len(supplements)}")
+
+    # ---- Parse meal rows ----
+    # Fixed column layout: A=MEAL/TIME, B=FOOD ITEM, C=QTY, D=PROTEIN, E=CALORIES, F=CARBS, G=CONSUMED?, H=NOTES
+    COL_FOOD = 1
+    COL_QTY = 2
+    COL_PROTEIN = 3
+    COL_CALORIES = 4
+    COL_CARBS = 5
+    COL_CONSUMED = 6
+    COL_NOTES = 7
+
     meals_imported = []
     current_section = "other"
     section_map = {
         "pre-swim": "pre_swim", "pre swim": "pre_swim",
         "post-swim": "post_swim", "post swim": "post_swim",
-        "breakfast": "breakfast", "lunch": "lunch",
+        "breakfast": "breakfast",
+        "lunch": "lunch",
+        "mid-morning": "mid_morning", "morning snack": "mid_morning",
         "afternoon snack": "snack", "snack": "snack",
-        "dinner": "dinner", "night": "night",
+        "dinner": "dinner",
+        "night": "night",
         "late night": "late_night",
     }
 
-    # Find the header row to understand column positions
-    header_idx = {}
-    food_col = None
+    # Find the header row (contains "FOOD ITEM")
+    meal_start = 0
     for ri, row in enumerate(rows):
-        row_lower = [c.lower().strip() for c in row]
-        for ci, cell in enumerate(row_lower):
-            if "food item" in cell or cell == "food":
-                food_col = ci
-                # Map columns by header
-                for cj, h in enumerate(row_lower):
-                    if "protein" in h:
-                        header_idx["protein"] = cj
-                    elif "calorie" in h:
-                        header_idx["calories"] = cj
-                    elif "carb" in h:
-                        header_idx["carbs"] = cj
-                    elif "consumed" in h:
-                        header_idx["consumed"] = cj
-                    elif "qty" in h or "quantity" in h:
-                        header_idx["qty"] = cj
-                    elif "fat" in h:
-                        header_idx["fat"] = cj
-                break
-        if food_col is not None:
+        if len(row) > 1 and "food item" in row[1].lower():
+            meal_start = ri + 1
             break
-
-    logger.info(f"[DROPBOX] Header mapping: food_col={food_col}, cols={header_idx}")
 
     # Delete existing meals for today
     db.execute("DELETE FROM meals WHERE user_id = ? AND date = ?", (g.user_id, today))
 
-    # Parse food rows
-    start_row = (ri + 1) if food_col is not None else 0
-    for row in rows[start_row:]:
-        if not any(c.strip() for c in row):
+    for row in rows[meal_start:]:
+        if len(row) < 6:
             continue
-
-        # Join row for section detection
         row_text = " ".join(row).lower()
 
-        # Skip non-food rows
-        if "subtotal" in row_text or "totals" in row_text.split()[0:1] or "daily total" in row_text:
-            continue
-        if "target" in row_text.split()[0:1] or "remaining" in row_text or "consumed so far" in row_text:
-            continue
-        if "supplement" in row_text or "sauna" in row_text or "tdee" in row_text or "physioiq" in row_text:
-            continue
+        # Stop at totals section
+        if row[0].strip().lower().startswith("totals") or row[0].strip().lower().startswith("daily total"):
+            break
+        if row[0].strip().lower().startswith("target") or "consumed so far" in row_text or "remaining needed" in row_text:
+            break
         if "notes / changes" in row_text or "claude day grade" in row_text:
+            break
+        if row[0].strip().lower() == "extra item":
             continue
 
-        # Section detection (look for section markers like ▸ PRE-SWIM or section name in first cells)
-        found_section = False
-        first_cells = " ".join(row[:3]).lower()
-        for key, val in section_map.items():
-            if key in first_cells and ("▸" in " ".join(row) or "subtotal" not in row_text):
-                current_section = val
-                found_section = True
-                break
-        if found_section:
+        # Skip subtotals
+        if "subtotal" in row_text:
             continue
 
-        # Try to extract food data using header positions
-        food_name = None
-        protein = 0
-        calories = 0
-        carbs = 0
-        fat = 0
-        consumed = None
-
-        if food_col is not None and food_col < len(row):
-            food_name = row[food_col].strip()
-            if not food_name or food_name.lower() in ("", "none", "food item"):
-                continue
-
-            def safe_float(val):
-                try:
-                    return float(val.replace(",", ""))
-                except (ValueError, TypeError, AttributeError):
-                    return 0
-
-            if "protein" in header_idx and header_idx["protein"] < len(row):
-                protein = safe_float(row[header_idx["protein"]])
-            if "calories" in header_idx and header_idx["calories"] < len(row):
-                calories = safe_float(row[header_idx["calories"]])
-            if "carbs" in header_idx and header_idx["carbs"] < len(row):
-                carbs = safe_float(row[header_idx["carbs"]])
-            if "fat" in header_idx and header_idx["fat"] < len(row):
-                fat = safe_float(row[header_idx["fat"]])
-            if "consumed" in header_idx and header_idx["consumed"] < len(row):
-                c_val = row[header_idx["consumed"]].strip().lower()
-                if c_val == "yes":
-                    consumed = True
-                elif c_val == "no":
-                    consumed = False
-
-        else:
-            # Fallback: tab-separated parsing (same as import endpoint)
-            nums = []
-            for c in row:
-                try:
-                    nums.append(float(c.replace(",", "")))
-                except (ValueError, TypeError):
-                    pass
-            # Find food name (first non-empty non-numeric cell)
-            for c in row:
-                c_stripped = c.strip()
-                if c_stripped and not c_stripped.replace(".", "").replace("-", "").isdigit() and c_stripped.lower() not in ("yes", "no"):
-                    food_name = c_stripped
+        # Section detection: column A contains section headers like "▸ PRE-SWIM ~5:30 AM"
+        col_a = row[0].strip()
+        if col_a and ("▸" in col_a or any(key in col_a.lower() for key in section_map)):
+            for key, val in section_map.items():
+                if key in col_a.lower():
+                    current_section = val
                     break
-            if food_name and len(nums) >= 3:
-                if len(nums) >= 4:
-                    protein, calories, carbs = nums[1], nums[2], nums[3]
-                else:
-                    protein, calories, carbs = nums[0], nums[1], nums[2]
-
-        # Skip empty / zero lines
-        if not food_name or (calories == 0 and protein == 0 and carbs == 0):
             continue
 
-        notes = f"Consumed: {'Yes' if consumed else 'Planned'}" if consumed is not None else "Planned"
+        # Food row: column B has the food name
+        food_name = row[COL_FOOD].strip() if row[COL_FOOD] else ""
+        if not food_name:
+            continue
+
+        protein = safe_float(row[COL_PROTEIN]) if len(row) > COL_PROTEIN else 0
+        calories = safe_float(row[COL_CALORIES]) if len(row) > COL_CALORIES else 0
+        carbs = safe_float(row[COL_CARBS]) if len(row) > COL_CARBS else 0
+        consumed = None
+        if len(row) > COL_CONSUMED and row[COL_CONSUMED]:
+            c_val = row[COL_CONSUMED].strip().lower()
+            if c_val == "yes":
+                consumed = True
+            elif c_val == "no":
+                consumed = False
+        notes_val = row[COL_NOTES].strip() if len(row) > COL_NOTES and row[COL_NOTES] else ""
+
+        # Skip zero-everything rows (empty food slots in template)
+        if calories == 0 and protein == 0 and carbs == 0:
+            continue
+
+        notes = f"Consumed: {'Yes' if consumed else 'Planned'}"
+        if notes_val:
+            notes += f" | {notes_val}"
+
         db.execute("""
             INSERT INTO meals (user_id, date, meal_type, description, calories, protein_g, carbs_g, fat_g, fiber_g, notes)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (g.user_id, today, current_section, food_name, calories, protein, carbs, fat, 0, notes))
+        """, (g.user_id, today, current_section, food_name, calories, protein, carbs, 0, 0, notes))
 
         meals_imported.append({
             "section": current_section,
@@ -1865,13 +1895,27 @@ def fetch_meal_plan_from_dropbox():
         })
 
     db.commit()
-    logger.info(f"[DROPBOX] Imported {len(meals_imported)} meals for user {g.user_id}")
+
+    # Store the metadata in daily_state for reports to use
+    try:
+        state_json = json.dumps({"meal_plan_meta": meta})
+        db.execute("""
+            INSERT INTO daily_state (user_id, date, state_json)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id, date) DO UPDATE SET state_json = excluded.state_json
+        """, (g.user_id, today, state_json))
+        db.commit()
+    except Exception as e:
+        logger.warning(f"[DROPBOX] Could not save daily_state: {e}")
+
+    logger.info(f"[DROPBOX] Imported {len(meals_imported)} meals for user {g.user_id} from '{meta.get('sheet')}'")
 
     return jsonify({
         "success": True,
-        "sheet": target_sheet.title if target_sheet else "unknown",
+        "sheet": meta.get("sheet", "unknown"),
         "meals_imported": len(meals_imported),
-        "meals": meals_imported
+        "meals": meals_imported,
+        "meta": meta
     })
 
 
@@ -1881,7 +1925,7 @@ def fetch_meal_plan_from_dropbox():
 @require_auth
 def get_workouts():
     db = get_db()
-    target_date = request.args.get("date", date.today().isoformat())
+    target_date = request.args.get("date", user_today().isoformat())
     workouts = db.execute(
         "SELECT * FROM workout_logs WHERE user_id = ? AND date = ? ORDER BY created_at",
         (g.user_id, target_date)
@@ -1896,7 +1940,7 @@ def add_workout():
     if not log_text:
         return jsonify({"error": "log_text is required"}), 400
 
-    workout_date = data.get("date", date.today().isoformat())
+    workout_date = data.get("date", user_today().isoformat())
     workout_type = data.get("workout_type", "lift")  # swim, lift, both
     notes = data.get("notes", "")
 
@@ -1935,7 +1979,7 @@ def push_workout():
     if not log_text:
         return jsonify({"error": "log_text is required"}), 400
 
-    workout_date = data.get("date", date.today().isoformat())
+    workout_date = data.get("date", user_today().isoformat())
     workout_type = data.get("workout_type", "lift")
     notes = data.get("notes", "Pushed from PhysioIQ Lift Tracker")
 
@@ -2043,7 +2087,7 @@ def garmin_test():
         info["display_name"] = garmin.get_full_name()
 
         # Try pulling today's stats
-        today = date.today().isoformat()
+        today = user_today().isoformat()
         stats = garmin.get_stats(today)
         info["stats_keys"] = list(stats.keys()) if stats else []
         info["resting_hr"] = stats.get("restingHeartRate") if stats else None
@@ -2063,7 +2107,7 @@ def garmin_test():
 @app.route("/api/garmin/data", methods=["GET"])
 @require_auth
 def garmin_data():
-    target_date = request.args.get("date", date.today().isoformat())
+    target_date = request.args.get("date", user_today().isoformat())
     days = request.args.get("days", 1, type=int)
     db = get_db()
     start = (datetime.fromisoformat(target_date) - timedelta(days=days - 1)).date().isoformat()
@@ -2106,7 +2150,7 @@ def generate_report_endpoint():
     data = request.json or {}
     report_type = data.get("type", "morning")
     user_id = g.user_id
-    today = date.today().isoformat()
+    today = user_today().isoformat()
 
     # Create a placeholder report row with status='generating'
     db = get_db()
@@ -2148,7 +2192,7 @@ def report_status(report_id):
 @app.route("/api/reports", methods=["GET"])
 @require_auth
 def get_reports():
-    target_date = request.args.get("date", date.today().isoformat())
+    target_date = request.args.get("date", user_today().isoformat())
     db = get_db()
     reports = db.execute(
         "SELECT id, date, report_type, status, created_at FROM reports WHERE user_id = ? AND date = ? ORDER BY created_at DESC",
@@ -2172,7 +2216,7 @@ def get_report(report_id):
 @app.route("/api/state", methods=["GET"])
 @require_auth
 def get_state():
-    target_date = request.args.get("date", date.today().isoformat())
+    target_date = request.args.get("date", user_today().isoformat())
     db = get_db()
     state = db.execute(
         "SELECT * FROM daily_state WHERE user_id = ? AND date = ?",
@@ -2185,7 +2229,7 @@ def get_state():
 def update_state():
     data = request.json or {}
     db = get_db()
-    today = date.today().isoformat()
+    today = user_today().isoformat()
     db.execute("""
         INSERT OR REPLACE INTO daily_state (user_id, date, state_json)
         VALUES (?, ?, ?)
@@ -2199,8 +2243,8 @@ def update_state():
 @require_auth
 def export_meals():
     """Export meal data as JSON (can be converted to CSV/Excel client-side)."""
-    start = request.args.get("start", (date.today() - timedelta(days=30)).isoformat())
-    end = request.args.get("end", date.today().isoformat())
+    start = request.args.get("start", (user_today() - timedelta(days=30)).isoformat())
+    end = request.args.get("end", user_today().isoformat())
     db = get_db()
     meals = db.execute(
         "SELECT * FROM meals WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date, created_at",
@@ -2211,8 +2255,8 @@ def export_meals():
 @app.route("/api/export/garmin", methods=["GET"])
 @require_auth
 def export_garmin():
-    start = request.args.get("start", (date.today() - timedelta(days=30)).isoformat())
-    end = request.args.get("end", date.today().isoformat())
+    start = request.args.get("start", (user_today() - timedelta(days=30)).isoformat())
+    end = request.args.get("end", user_today().isoformat())
     db = get_db()
     data = db.execute(
         "SELECT * FROM garmin_data WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date",
