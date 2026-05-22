@@ -16,6 +16,8 @@ import threading
 from datetime import datetime, date, timedelta
 from functools import wraps
 from pathlib import Path
+from io import BytesIO
+import requests as http_requests  # renamed to avoid clash with flask.request
 
 # Set up logging so errors show in Render logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -167,6 +169,15 @@ def init_db():
             log_text TEXT NOT NULL,
             notes TEXT,
             created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS user_settings (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            key TEXT NOT NULL,
+            value TEXT NOT NULL,
+            updated_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(user_id, key)
         );
 
         CREATE INDEX IF NOT EXISTS idx_garmin_date ON garmin_data(user_id, date);
@@ -1606,6 +1617,259 @@ def import_meal_plan():
     db.commit()
     return jsonify({
         "success": True,
+        "meals_imported": len(meals_imported),
+        "meals": meals_imported
+    })
+
+
+# --- User Settings ---
+
+@app.route("/api/settings", methods=["GET"])
+@require_auth
+def get_settings():
+    db = get_db()
+    rows = db.execute("SELECT key, value FROM user_settings WHERE user_id = ?", (g.user_id,)).fetchall()
+    return jsonify({r["key"]: r["value"] for r in rows})
+
+
+@app.route("/api/settings", methods=["POST"])
+@require_auth
+def save_settings():
+    data = request.json or {}
+    db = get_db()
+    for key, value in data.items():
+        db.execute("""
+            INSERT INTO user_settings (user_id, key, value, updated_at)
+            VALUES (?, ?, ?, datetime('now'))
+            ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+        """, (g.user_id, key, str(value)))
+    db.commit()
+    return jsonify({"success": True})
+
+
+# --- Dropbox Meal Plan Fetch ---
+
+@app.route("/api/meals/fetch-plan", methods=["POST"])
+@require_auth
+def fetch_meal_plan_from_dropbox():
+    """Download the Excel meal plan from the user's saved Dropbox link, parse it, and import meals."""
+    db = get_db()
+    today = date.today().isoformat()
+
+    # Get Dropbox URL from settings
+    row = db.execute("SELECT value FROM user_settings WHERE user_id = ? AND key = 'dropbox_meal_plan_url'",
+                     (g.user_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "No Dropbox link saved. Paste your Dropbox share link in Meals settings first."}), 400
+
+    dropbox_url = row["value"].strip()
+
+    # Convert share link to direct download (change dl=0 to dl=1)
+    if "dropbox.com" in dropbox_url:
+        if "dl=0" in dropbox_url:
+            dropbox_url = dropbox_url.replace("dl=0", "dl=1")
+        elif "dl=1" not in dropbox_url:
+            dropbox_url += ("&" if "?" in dropbox_url else "?") + "dl=1"
+
+    logger.info(f"[DROPBOX] Fetching meal plan for user {g.user_id} from: {dropbox_url[:80]}...")
+
+    # Download the Excel file
+    try:
+        resp = http_requests.get(dropbox_url, timeout=30, allow_redirects=True)
+        resp.raise_for_status()
+    except Exception as e:
+        logger.error(f"[DROPBOX] Download failed: {e}")
+        return jsonify({"error": f"Failed to download from Dropbox: {str(e)}"}), 500
+
+    # Parse Excel with openpyxl
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(BytesIO(resp.content), read_only=True, data_only=True)
+
+        # Find today's sheet or the most relevant sheet
+        # Sheets might be named by date, week, or be the first/active sheet
+        target_sheet = None
+        today_str = date.today().strftime("%m/%d")       # e.g., "05/21"
+        today_str2 = date.today().strftime("%-m/%-d")    # e.g., "5/21"
+        today_str3 = date.today().strftime("%Y-%m-%d")   # e.g., "2026-05-21"
+        today_str4 = date.today().strftime("%b %d")      # e.g., "May 21"
+        today_dow = date.today().strftime("%A")           # e.g., "Thursday"
+
+        for ws in wb.worksheets:
+            ws_name = ws.title.lower().strip()
+            if today_str in ws_name or today_str2 in ws_name or today_str3 in ws_name or today_str4.lower() in ws_name or today_dow.lower() in ws_name:
+                target_sheet = ws
+                logger.info(f"[DROPBOX] Found today's sheet: '{ws.title}'")
+                break
+
+        if not target_sheet:
+            # Use the active sheet or first sheet
+            target_sheet = wb.active or wb.worksheets[0]
+            logger.info(f"[DROPBOX] Using sheet: '{target_sheet.title}'")
+
+        # Read all rows into a list
+        rows = []
+        for row in target_sheet.iter_rows(values_only=True):
+            rows.append([str(cell) if cell is not None else "" for cell in row])
+
+        wb.close()
+
+    except Exception as e:
+        logger.error(f"[DROPBOX] Excel parse failed: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": f"Failed to parse Excel file: {str(e)}"}), 500
+
+    # Parse the meal plan from rows
+    meals_imported = []
+    current_section = "other"
+    section_map = {
+        "pre-swim": "pre_swim", "pre swim": "pre_swim",
+        "post-swim": "post_swim", "post swim": "post_swim",
+        "breakfast": "breakfast", "lunch": "lunch",
+        "afternoon snack": "snack", "snack": "snack",
+        "dinner": "dinner", "night": "night",
+        "late night": "late_night",
+    }
+
+    # Find the header row to understand column positions
+    header_idx = {}
+    food_col = None
+    for ri, row in enumerate(rows):
+        row_lower = [c.lower().strip() for c in row]
+        for ci, cell in enumerate(row_lower):
+            if "food item" in cell or cell == "food":
+                food_col = ci
+                # Map columns by header
+                for cj, h in enumerate(row_lower):
+                    if "protein" in h:
+                        header_idx["protein"] = cj
+                    elif "calorie" in h:
+                        header_idx["calories"] = cj
+                    elif "carb" in h:
+                        header_idx["carbs"] = cj
+                    elif "consumed" in h:
+                        header_idx["consumed"] = cj
+                    elif "qty" in h or "quantity" in h:
+                        header_idx["qty"] = cj
+                    elif "fat" in h:
+                        header_idx["fat"] = cj
+                break
+        if food_col is not None:
+            break
+
+    logger.info(f"[DROPBOX] Header mapping: food_col={food_col}, cols={header_idx}")
+
+    # Delete existing meals for today
+    db.execute("DELETE FROM meals WHERE user_id = ? AND date = ?", (g.user_id, today))
+
+    # Parse food rows
+    start_row = (ri + 1) if food_col is not None else 0
+    for row in rows[start_row:]:
+        if not any(c.strip() for c in row):
+            continue
+
+        # Join row for section detection
+        row_text = " ".join(row).lower()
+
+        # Skip non-food rows
+        if "subtotal" in row_text or "totals" in row_text.split()[0:1] or "daily total" in row_text:
+            continue
+        if "target" in row_text.split()[0:1] or "remaining" in row_text or "consumed so far" in row_text:
+            continue
+        if "supplement" in row_text or "sauna" in row_text or "tdee" in row_text or "physioiq" in row_text:
+            continue
+        if "notes / changes" in row_text or "claude day grade" in row_text:
+            continue
+
+        # Section detection (look for section markers like ▸ PRE-SWIM or section name in first cells)
+        found_section = False
+        first_cells = " ".join(row[:3]).lower()
+        for key, val in section_map.items():
+            if key in first_cells and ("▸" in " ".join(row) or "subtotal" not in row_text):
+                current_section = val
+                found_section = True
+                break
+        if found_section:
+            continue
+
+        # Try to extract food data using header positions
+        food_name = None
+        protein = 0
+        calories = 0
+        carbs = 0
+        fat = 0
+        consumed = None
+
+        if food_col is not None and food_col < len(row):
+            food_name = row[food_col].strip()
+            if not food_name or food_name.lower() in ("", "none", "food item"):
+                continue
+
+            def safe_float(val):
+                try:
+                    return float(val.replace(",", ""))
+                except (ValueError, TypeError, AttributeError):
+                    return 0
+
+            if "protein" in header_idx and header_idx["protein"] < len(row):
+                protein = safe_float(row[header_idx["protein"]])
+            if "calories" in header_idx and header_idx["calories"] < len(row):
+                calories = safe_float(row[header_idx["calories"]])
+            if "carbs" in header_idx and header_idx["carbs"] < len(row):
+                carbs = safe_float(row[header_idx["carbs"]])
+            if "fat" in header_idx and header_idx["fat"] < len(row):
+                fat = safe_float(row[header_idx["fat"]])
+            if "consumed" in header_idx and header_idx["consumed"] < len(row):
+                c_val = row[header_idx["consumed"]].strip().lower()
+                if c_val == "yes":
+                    consumed = True
+                elif c_val == "no":
+                    consumed = False
+
+        else:
+            # Fallback: tab-separated parsing (same as import endpoint)
+            nums = []
+            for c in row:
+                try:
+                    nums.append(float(c.replace(",", "")))
+                except (ValueError, TypeError):
+                    pass
+            # Find food name (first non-empty non-numeric cell)
+            for c in row:
+                c_stripped = c.strip()
+                if c_stripped and not c_stripped.replace(".", "").replace("-", "").isdigit() and c_stripped.lower() not in ("yes", "no"):
+                    food_name = c_stripped
+                    break
+            if food_name and len(nums) >= 3:
+                if len(nums) >= 4:
+                    protein, calories, carbs = nums[1], nums[2], nums[3]
+                else:
+                    protein, calories, carbs = nums[0], nums[1], nums[2]
+
+        # Skip empty / zero lines
+        if not food_name or (calories == 0 and protein == 0 and carbs == 0):
+            continue
+
+        notes = f"Consumed: {'Yes' if consumed else 'Planned'}" if consumed is not None else "Planned"
+        db.execute("""
+            INSERT INTO meals (user_id, date, meal_type, description, calories, protein_g, carbs_g, fat_g, fiber_g, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (g.user_id, today, current_section, food_name, calories, protein, carbs, fat, 0, notes))
+
+        meals_imported.append({
+            "section": current_section,
+            "food": food_name,
+            "protein": protein,
+            "calories": calories,
+            "carbs": carbs,
+            "consumed": consumed
+        })
+
+    db.commit()
+    logger.info(f"[DROPBOX] Imported {len(meals_imported)} meals for user {g.user_id}")
+
+    return jsonify({
+        "success": True,
+        "sheet": target_sheet.title if target_sheet else "unknown",
         "meals_imported": len(meals_imported),
         "meals": meals_imported
     })
